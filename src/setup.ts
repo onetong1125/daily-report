@@ -1,0 +1,232 @@
+import inquirer from "inquirer";
+import { execSync } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import { DailyReportConfig } from "./types";
+import { loadConfig, saveConfig } from "./config";
+import { parseTimeExpression } from "./scheduler";
+
+/**
+ * Scan for Git repositories under common parent directories.
+ */
+function scanGitRepos(): string[] {
+  const searchDirs = [
+    os.homedir(),
+    path.join(os.homedir(), "myprojects"),
+    path.join(os.homedir(), "Research"),
+    path.join(os.homedir(), "projects"),
+    path.join(os.homedir(), "work"),
+  ];
+
+  const found: string[] = [];
+  const seen = new Set<string>();
+
+  for (const dir of searchDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      // Search up to 2 levels deep
+      const result = execSync(
+        `find "${dir}" -maxdepth 3 -name ".git" -type d 2>/dev/null`,
+        { encoding: "utf-8", timeout: 10000, stdio: "pipe" }
+      ).trim();
+
+      for (const gitDir of result.split("\n")) {
+        if (!gitDir) continue;
+        const repoPath = path.dirname(gitDir);
+        if (!seen.has(repoPath)) {
+          seen.add(repoPath);
+          found.push(repoPath);
+        }
+      }
+    } catch {
+      // skip inaccessible directories
+    }
+  }
+
+  return found.sort();
+}
+
+/**
+ * Interactive setup wizard (spec §3.3).
+ */
+export async function runSetup(): Promise<void> {
+  console.log("\n📋 欢迎使用日报工具！让我们完成初始化...\n");
+
+  const existingConfig = loadConfig();
+
+  // Step 1: Repos
+  console.log("▸ 步骤 1/4: 配置追踪仓库\n");
+  const foundRepos = scanGitRepos();
+
+  const repoAnswer = await inquirer.prompt<{ repos: string[] }>([
+    {
+      type: "checkbox",
+      name: "repos",
+      message: "请选择要追踪的 Git 仓库（空格选中，回车确认）:",
+      choices: [
+        ...foundRepos.map((r) => ({
+          name: r.replace(os.homedir(), "~"),
+          value: r,
+          checked: existingConfig.repos.includes(r),
+        })),
+        new inquirer.Separator(),
+        { name: "手动输入路径", value: "__custom__" },
+      ],
+      pageSize: 15,
+    },
+  ]);
+
+  let repos = repoAnswer.repos.filter((r) => r !== "__custom__");
+
+  if (repoAnswer.repos.includes("__custom__")) {
+    const customAnswer = await inquirer.prompt<{ path: string }>([
+      {
+        type: "input",
+        name: "path",
+        message: "请输入仓库路径（多个用逗号分隔）:",
+        validate: (input: string) => input.trim().length > 0 || "路径不能为空",
+      },
+    ]);
+    const customRepos = customAnswer.path
+      .split(",")
+      .map((p) => p.trim().replace(/^~/, os.homedir()))
+      .filter((p) => p.length > 0);
+    repos = [...repos, ...customRepos];
+  }
+
+  // Step 2: LLM Config
+  console.log("\n▸ 步骤 2/4: 配置 AI 模型\n");
+
+  const llmAnswer = await inquirer.prompt<{
+    provider: string;
+    baseUrl: string;
+    model: string;
+    apiKey: string;
+  }>([
+    {
+      type: "list",
+      name: "provider",
+      message: "请选择 API 类型:",
+      choices: [
+        { name: "OpenAI 兼容接口（含中转站）", value: "openai-compatible" },
+        { name: "Anthropic 官方 API", value: "anthropic" },
+      ],
+      default: existingConfig.llm.provider,
+    },
+    {
+      type: "input",
+      name: "baseUrl",
+      message: "API 地址:",
+      default: existingConfig.llm.baseUrl || "https://api.openai.com/v1",
+    },
+    {
+      type: "input",
+      name: "model",
+      message: "模型名称:",
+      default: existingConfig.llm.model || "gpt-4o",
+    },
+    {
+      type: "password",
+      name: "apiKey",
+      message: "API Key（支持 ${ENV_VAR} 引用环境变量）:",
+      mask: "*",
+      default: existingConfig.llm.apiKey || "${OPENAI_API_KEY}",
+    },
+  ]);
+
+  // Step 3: Schedule
+  console.log("\n▸ 步骤 3/4: 配置定时任务\n");
+
+  const scheduleAnswer = await inquirer.prompt<{
+    enabled: boolean;
+    time: string;
+    frequency: string;
+  }>([
+    {
+      type: "confirm",
+      name: "enabled",
+      message: "是否启用定时自动生成日报？",
+      default: existingConfig.schedule.enabled,
+    },
+    {
+      type: "input",
+      name: "time",
+      message: "什么时间生成？(HH:mm):",
+      default: "18:00",
+      when: (answers) => answers.enabled,
+    },
+    {
+      type: "list",
+      name: "frequency",
+      message: "哪些天？",
+      choices: [
+        { name: "每天", value: "*" },
+        { name: "工作日", value: "weekday" },
+        { name: "周末", value: "weekend" },
+        { name: "周一至周五", value: "weekday" },
+      ],
+      default: "weekday",
+      when: (answers) => answers.enabled,
+    },
+  ]);
+
+  // Convert to cron
+  const cronExpr = scheduleAnswer.enabled
+    ? parseTimeExpression(`${scheduleAnswer.time} ${scheduleAnswer.frequency}`)
+    : "0 18 * * 1-5";
+
+  // Step 4: Review and save
+  console.log("\n▸ 步骤 4/4: 确认配置\n");
+
+  console.log("┌─ 配置摘要 ──────────────────────────┐");
+  console.log(`│ 追踪仓库: ${repos.length} 个`);
+  repos.slice(0, 5).forEach((r) => {
+    const short = r.replace(os.homedir(), "~");
+    console.log(`│   - ${short.length > 35 ? "..." + short.slice(-32) : short}`);
+  });
+  if (repos.length > 5) console.log(`│   ... 还有 ${repos.length - 5} 个`);
+  console.log(`│ LLM: ${llmAnswer.model} @ ${llmAnswer.baseUrl}`);
+  console.log(`│ 定时: ${scheduleAnswer.enabled ? `${scheduleAnswer.time} (${scheduleAnswer.frequency})` : "关闭"}`);
+  console.log(`│ 日报保存到: ~/.daily-report/reports/`);
+  console.log("└──────────────────────────────────────┘");
+
+  const confirmAnswer = await inquirer.prompt<{ confirm: boolean }>([
+    {
+      type: "confirm",
+      name: "confirm",
+      message: "是否保存配置？",
+      default: true,
+    },
+  ]);
+
+  if (!confirmAnswer.confirm) {
+    console.log("❌ 已取消配置。");
+    return;
+  }
+
+  // Build and save config
+  const config: DailyReportConfig = {
+    repos,
+    llm: {
+      provider: llmAnswer.provider,
+      baseUrl: llmAnswer.baseUrl,
+      apiKey: llmAnswer.apiKey,
+      model: llmAnswer.model,
+    },
+    report: {
+      outputDir: "~/.daily-report/reports",
+      printToTerminal: true,
+      timezone: existingConfig.report.timezone || "Asia/Shanghai",
+    },
+    privacy: existingConfig.privacy,
+    schedule: {
+      enabled: scheduleAnswer.enabled,
+      cron: cronExpr,
+    },
+  };
+
+  saveConfig(config);
+  console.log("\n✅ 配置已保存到 ~/.daily-report/config.json");
+  console.log("🎉 现在可以运行 daily-report 生成第一份日报！\n");
+}

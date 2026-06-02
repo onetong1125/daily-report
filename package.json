@@ -1,0 +1,26 @@
+{
+  "name": "daily-report",
+  "version": "0.1.0",
+  "description": "自动日报工具：聚合 Git、GitHub、Claude Code、Codex CLI 的每日活动，生成日报和明日行动建议",
+  "main": "dist/index.js",
+  "bin": {
+    "daily-report": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "keywords": ["daily-report", "cli", "productivity"],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "inquirer": "^9.3.7"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
