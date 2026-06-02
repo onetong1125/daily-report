@@ -11,37 +11,36 @@ import { parseTimeExpression } from "./scheduler";
  * Scan for Git repositories under common parent directories.
  */
 function scanGitRepos(): string[] {
-  const searchDirs = [
-    os.homedir(),
-    path.join(os.homedir(), "myprojects"),
-    path.join(os.homedir(), "Research"),
-    path.join(os.homedir(), "projects"),
-    path.join(os.homedir(), "work"),
-  ];
-
+  const homeDir = os.homedir();
   const found: string[] = [];
   const seen = new Set<string>();
 
-  for (const dir of searchDirs) {
-    if (!fs.existsSync(dir)) continue;
-    try {
-      // Search up to 2 levels deep
-      const result = execSync(
-        `find "${dir}" -maxdepth 3 -name ".git" -type d 2>/dev/null`,
-        { encoding: "utf-8", timeout: 10000, stdio: "pipe" }
-      ).trim();
+  try {
+    // Scan home directory up to 4 levels deep for .git directories.
+    // Filter out hidden/system directories to keep the list manageable.
+    const result = execSync(
+      `find "${homeDir}" -maxdepth 4 -name ".git" -type d 2>/dev/null`,
+      { encoding: "utf-8", timeout: 15000, stdio: "pipe" }
+    ).trim();
 
-      for (const gitDir of result.split("\n")) {
-        if (!gitDir) continue;
-        const repoPath = path.dirname(gitDir);
-        if (!seen.has(repoPath)) {
-          seen.add(repoPath);
-          found.push(repoPath);
-        }
+    for (const gitDir of result.split("\n")) {
+      if (!gitDir) continue;
+      const repoPath = path.dirname(gitDir);
+
+      // Skip hidden/system directories at any path segment
+      const segments = repoPath.split(path.sep);
+      if (segments.some((seg) => seg.startsWith("."))) continue;
+
+      // Skip well-known system/library paths
+      if (repoPath.startsWith("/System/") || repoPath.startsWith("/Library/")) continue;
+
+      if (!seen.has(repoPath)) {
+        seen.add(repoPath);
+        found.push(repoPath);
       }
-    } catch {
-      // skip inaccessible directories
     }
+  } catch {
+    // skip if find fails
   }
 
   return found.sort();
@@ -74,6 +73,7 @@ export async function runSetup(): Promise<void> {
         { name: "手动输入路径", value: "__custom__" },
       ],
       pageSize: 15,
+      loop: false,
     },
   ]);
 
