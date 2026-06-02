@@ -9,9 +9,16 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
-  "keywords": ["daily-report", "cli", "productivity"],
+  "keywords": [
+    "daily-report",
+    "cli",
+    "productivity"
+  ],
   "license": "MIT",
   "dependencies": {
     "commander": "^12.1.0",
@@ -20,7 +27,9 @@
   "devDependencies": {
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^4.1.8",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
   }
 }
