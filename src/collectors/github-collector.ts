@@ -14,10 +14,25 @@ export function isGhAvailable(): boolean {
 }
 
 /**
- * Extract owner/repo from a local git remote URL.
+ * Parse a git remote URL to extract owner/repo.
  * Supports both HTTPS and SSH formats:
  *   https://github.com/owner/repo.git
  *   git@github.com:owner/repo.git
+ */
+export function parseGitRemoteUrl(remote: string): string | null {
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = remote.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1];
+
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = remote.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (httpsMatch) return httpsMatch[1];
+
+  return null;
+}
+
+/**
+ * Extract owner/repo from a local git remote URL.
  */
 function extractOwnerRepo(repoPath: string): string | null {
   try {
@@ -26,22 +41,15 @@ function extractOwnerRepo(repoPath: string): string | null {
       stdio: "pipe",
     }).trim();
 
-    // SSH: git@github.com:owner/repo.git
-    const sshMatch = remote.match(/git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/);
-    if (sshMatch) return sshMatch[1];
-
-    // HTTPS: https://github.com/owner/repo.git
-    const httpsMatch = remote.match(/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/);
-    if (httpsMatch) return httpsMatch[1];
-
-    return null;
+    return parseGitRemoteUrl(remote);
   } catch {
     return null;
   }
 }
 
 /**
- * Safely run gh command, return parsed JSON or null on failure.
+ * Safely run gh command, return parsed JSON array.
+ * Handles both standard JSON arrays and JSON Lines (--jq '.[] | ...') output.
  */
 function ghJson(cmd: string): any[] {
   try {
@@ -51,7 +59,18 @@ function ghJson(cmd: string): any[] {
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
     if (!output) return [];
-    return JSON.parse(output);
+
+    // Try standard JSON array first
+    try {
+      const parsed = JSON.parse(output);
+      if (Array.isArray(parsed)) return parsed;
+      // Single object — wrap in array
+      return [parsed];
+    } catch {
+      // Not a single JSON value — try JSON Lines (each line is a JSON object)
+      const lines = output.split("\n").filter((l) => l.trim());
+      return lines.map((l) => JSON.parse(l));
+    }
   } catch {
     return [];
   }
@@ -82,15 +101,15 @@ export function collectGitHubEvents(
   const today = todayDateStr(boundary);
   const seen = new Set<string>(); // dedup by entity_id
 
-  // Get authenticated username for commit queries
-  let username = "";
+  // Get authenticated GitHub username for PR/issue/review attribution
+  let ghUser = "";
   try {
-    username = execSync("gh api user --jq .login", {
+    ghUser = execSync("gh api user --jq .login", {
       encoding: "utf-8",
       stdio: "pipe",
     }).trim();
   } catch {
-    // continue without commit queries
+    // continue without username
   }
 
   const addEvent = (event: SanitizedEvent): void => {
@@ -119,7 +138,7 @@ export function collectGitHubEvents(
         entity_type: "pr",
         summary: pr.title.length > 80 ? pr.title.slice(0, 77) + "..." : pr.title,
         related_entities: [],
-        author: username || undefined,
+        author: ghUser || undefined,
         state: pr.state || "open",
       });
     }
@@ -138,7 +157,7 @@ export function collectGitHubEvents(
         entity_type: "pr",
         summary: pr.title.length > 80 ? pr.title.slice(0, 77) + "..." : pr.title,
         related_entities: [],
-        author: username || undefined,
+        author: ghUser || undefined,
         state: "merged",
       });
     }
@@ -157,7 +176,7 @@ export function collectGitHubEvents(
         entity_type: "issue",
         summary: issue.title.length > 80 ? issue.title.slice(0, 77) + "..." : issue.title,
         related_entities: [],
-        author: username || undefined,
+        author: ghUser || undefined,
         state: issue.state || "open",
       });
     }
@@ -170,7 +189,7 @@ export function collectGitHubEvents(
       if (!pr.number) continue;
       try {
         const reviews = ghJson(
-          `gh api "repos/${ownerRepo}/pulls/${pr.number}/reviews" --jq '.[] | select(.submitted_at >= "${boundary.startUtc}") | {id, submitted_at, state}' --limit 10`
+          `gh api "repos/${ownerRepo}/pulls/${pr.number}/reviews" --jq '[.[] | select(.submitted_at >= "${boundary.startUtc}") | {id, submitted_at, state}]'`
         );
         for (const review of reviews) {
           if (!review.id) continue;
@@ -182,7 +201,7 @@ export function collectGitHubEvents(
             entity_type: "review",
             summary: `Reviewed: PR #${pr.number}`,
             related_entities: [String(pr.number)],
-            author: username || undefined,
+            author: ghUser || undefined,
             state: review.state || "commented",
           });
         }
@@ -191,26 +210,25 @@ export function collectGitHubEvents(
       }
     }
 
-    // 5. User's own commits today
-    if (username) {
-      const commits = ghJson(
-        `gh api "repos/${ownerRepo}/commits?since=${boundary.startUtc}&until=${boundary.endUtc}&author=${username}" --jq '.[] | {sha, commit: {message, author: {date}}}' --limit 50`
-      );
-      for (const c of commits) {
-        if (!c.sha) continue;
-        const msg = c.commit?.message?.split("\n")[0] || "";
-        const summary = msg.length > 80 ? msg.slice(0, 77) + "..." : msg;
-        addEvent({
-          source: "github",
-          repo: ownerRepo,
-          timestamp: c.commit?.author?.date || boundary.startUtc,
-          entity_id: c.sha.slice(0, 7),
-          entity_type: "commit",
-          summary,
-          related_entities: [],
-          author: username,
-        });
-      }
+    // 5. Today's commits via gh api (REST API, real-time, no index delay)
+    // No author filter — git author name may differ from GitHub username.
+    const commits = ghJson(
+      `gh api "repos/${ownerRepo}/commits?since=${boundary.startUtc}&until=${boundary.endUtc}&per_page=50" --jq '[.[] | {sha, msg: .commit.message, date: .commit.author.date}]'`
+    );
+    for (const c of commits) {
+      if (!c.sha) continue;
+      const msg = (c.msg || "").split("\n")[0];
+      const summary = msg.length > 80 ? msg.slice(0, 77) + "..." : msg;
+      addEvent({
+        source: "github",
+        repo: ownerRepo,
+        timestamp: c.date || boundary.startUtc,
+        entity_id: c.sha.slice(0, 7),
+        entity_type: "commit",
+        summary,
+        related_entities: [],
+        author: ghUser || undefined,
+      });
     }
   }
 

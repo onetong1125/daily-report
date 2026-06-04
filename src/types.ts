@@ -25,14 +25,18 @@ export interface GroupedEvents {
   codex_events: SanitizedEvent[];
 }
 
-// Report structure returned by generator
+// Per-project summary in the report
+export interface ProjectSummary {
+  project: string;
+  summary: string;
+}
+
+// Report structure returned by generator — project-oriented, not source-oriented
 export interface DailyReport {
   date: string;
   tldr: string[];
-  git_section: string;
-  github_section: string;
-  claude_section: string;
-  codex_section: string;
+  projects: ProjectSummary[];
+  other_ai: string;
   tomorrow_suggestions: string[];
 }
 

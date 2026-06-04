@@ -10,47 +10,42 @@ const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
  * Does NOT call any LLM — uses regex and keyword frequency.
  * Returns a summary string like "讨论了 daily-report 工具的需求、架构设计和安全方案"
  */
-function extractTopics(messages: string[]): string {
-  if (messages.length === 0) return "无对话内容";
+/**
+ * Extract a human-readable conversation summary from user messages.
+ * Returns null if no meaningful content can be extracted,
+ * signalling that this session should be skipped.
+ */
+export function extractClaudeSummary(messages: string[]): string | null {
+  if (messages.length === 0) return null;
 
-  const allText = messages.join(" ");
+  // Filter out system prompts, skill instructions, and other noise
+  const noisePatterns = [
+    /^</,                           // XML tags
+    /^You are/,                     // system prompts
+    /^#!/,                          // shebang
+    /^#/,                           // Markdown headings (skill content, instructions)
+    /^Base directory for this skill/i,  // skill instructions
+    /^\[Request interrupted/,       // interrupt markers
+    /^\[{/,                         // JSON-ish system messages
+    /^EXTREMELY IMPORTANT/,         // skill emphasis banners
+    /^IMPORTANT:/,                  // instruction banners
+  ];
+  const isNoise = (m: string): boolean => noisePatterns.some((p) => p.test(m));
 
-  // Match meaningful CJK words (2+ chars) and English tech terms
-  const cjkWords = allText.match(/[一-鿿]{2,4}/g) || [];
-  const techTerms = allText.match(/\b(AI|LLM|API|CLI|UI|SQL|PR|Issue|commit|Git|GitHub|Claude|Codex|TypeScript|Python|Node\.js|React|Vue|Docker|K8s|RL|PPO|DQN|训练|推理|部署|测试|调试|修复|设计|重构|优化|日报|report|config|setup|安全|隐私|privacy|schedule)\b/gi) || [];
+  const substantive = messages
+    .map((m) => m.trim())
+    .filter((m) => m.length > 20)
+    .filter((m) => !isNoise(m));
 
-  // Count word frequencies
-  const wordFreq = new Map<string, number>();
-  for (const w of cjkWords) {
-    wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
-  }
-  for (const t of techTerms) {
-    wordFreq.set(t, (wordFreq.get(t) || 0) + 3); // tech terms have higher weight
-  }
+  if (substantive.length === 0) return null;
 
-  // Extract specific filenames
-  const fileMatches = allText.match(/\b[\w/-]+\.(ts|py|js|rs|go|java|md|json|yaml|toml)\b/gi) || [];
-  for (const f of fileMatches.slice(0, 5)) {
-    const basename = f.split("/").pop() || f;
-    wordFreq.set(basename, (wordFreq.get(basename) || 0) + 5);
-  }
+  // Take up to 5 representative messages, truncate each to 120 chars
+  const excerpts = substantive.slice(0, 5).map((m) => {
+    const cleaned = m.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+    return cleaned.length > 120 ? cleaned.slice(0, 117) + "..." : cleaned;
+  });
 
-  // Filter stop words and sort by frequency
-  const stopWords = new Set(["的", "了", "是", "我", "在", "有", "和", "不", "这", "你", "他", "也", "都", "要", "会", "就", "能", "对", "去", "很", "到", "说", "想", "看", "让", "给", "被", "把", "用", "做", "为", "可以", "什么", "怎么", "这个", "那个", "一个", "没有", "已经", "还是", "就是", "如果", "因为", "所以", "但是", "然后", "现在", "需要", "应该", "知道", "觉得", "问题", "我们", "他们", "自己", "还是", "不是", "比较", "出来", "起来", "时候", "可能"]);
-  const topTopics = [...wordFreq.entries()]
-    .filter(([w]) => !stopWords.has(w) && w.length > 1)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([word]) => word);
-
-  if (topTopics.length === 0) {
-    const totalChars = allText.length;
-    if (totalChars > 1000) return "有大量技术对话";
-    if (totalChars > 200) return "有简短对话";
-    return "几乎无对话内容";
-  }
-
-  return `讨论了 ${topTopics.join("、")}`;
+  return excerpts.join(" | ");
 }
 
 /**
@@ -138,7 +133,8 @@ function parseClaudeSession(
     if (!sessionStartedToday && !modifiedToday) return null;
 
     const sessionId = path.basename(filePath, ".jsonl");
-    const topicSummary = extractTopics(userMessages);
+    const topicSummary = extractClaudeSummary(userMessages);
+    if (!topicSummary) return null;
 
     return {
       source: "claude",
