@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { extractClaudeSummary } from "../src/collectors/claude-collector";
 
 describe("extractClaudeSummary", () => {
-  it('returns "无对话内容" for empty messages array', () => {
-    expect(extractClaudeSummary([])).toBe("无对话内容");
+  it('returns null for empty messages array', () => {
+    expect(extractClaudeSummary([])).toBeNull();
   });
 
   it("joins up to 5 substantive messages with | separator", () => {
@@ -52,14 +52,14 @@ describe("extractClaudeSummary", () => {
     expect(summary).not.toContain("interrupted");
   });
 
-  it('returns "几乎无对话内容" when all messages are noise', () => {
+  it('returns null when all messages are noise', () => {
     const messages = [
       "<system>",
       "You are a helpful assistant",
       "#!/bin/bash",
     ];
     const summary = extractClaudeSummary(messages);
-    expect(summary).toBe("几乎无对话内容");
+    expect(summary).toBeNull();
   });
 
   it("truncates long messages to 120 chars", () => {
@@ -105,25 +105,21 @@ describe("extractClaudeSummary", () => {
     expect(summary).toContain("请帮我 实现一个 日报工具");
   });
 
-  it('returns "有大量技术对话" when total chars > 2000 but all are short', () => {
+  it('returns null when total chars > 2000 but all messages are too short', () => {
     // Create many short messages (<20 chars each) so all are filtered,
-    // but total chars is large
-    const shortMessages = Array(150).fill("short msg here!!!"); // 15 chars each
-    // Actually each is 16 chars (including the !!!) — still < 20
-    // Hmm, "short msg here!!!" is 18 chars, < 20.
-    // 150 * 18 = 2700 > 2000
+    // but total chars is large. Should return null — no meaningful content.
+    const shortMessages = Array(150).fill("short msg here!!!"); // 18 chars each, < 20
     const summary = extractClaudeSummary(shortMessages);
 
-    // All individual messages are too short, but total chars > 2000
-    expect(summary).toBe("有大量技术对话");
+    expect(summary).toBeNull();
   });
 
-  it('returns "有简短对话" when total chars > 300 but < 2000 with all short messages', () => {
+  it('returns null when total chars > 300 but all messages are too short', () => {
     // Create messages that are all < 20 chars each
     const shortMessages = Array(30).fill("short message test!"); // 18 chars * 30 = 540
     const summary = extractClaudeSummary(shortMessages);
 
-    expect(summary).toBe("有简短对话");
+    expect(summary).toBeNull();
   });
 
   it("takes only first 5 substantive messages", () => {

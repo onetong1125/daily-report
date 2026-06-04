@@ -5,7 +5,7 @@ import * as path from "path";
 import * as os from "os";
 import { DailyReportConfig } from "./types";
 import { loadConfig, saveConfig } from "./config";
-import { parseTimeExpression } from "./scheduler";
+import { parseTimeExpression, scheduleOn } from "./scheduler";
 
 /**
  * Scan for Git repositories under common parent directories.
@@ -109,8 +109,8 @@ export async function runSetup(): Promise<void> {
       name: "provider",
       message: "请选择 API 类型:",
       choices: [
-        { name: "OpenAI 兼容接口（含中转站）", value: "openai-compatible" },
-        { name: "Anthropic 官方 API", value: "anthropic" },
+        { name: "OPENAI 模式（/chat/completions 端点）", value: "openai-compatible" },
+        { name: "ANTHROPIC 模式（/v1/messages 端点）", value: "anthropic" },
       ],
       default: existingConfig.llm.provider,
     },
@@ -118,13 +118,23 @@ export async function runSetup(): Promise<void> {
       type: "input",
       name: "baseUrl",
       message: "API 地址:",
-      default: existingConfig.llm.baseUrl || "https://api.openai.com/v1",
+      default: (answers: any) => {
+        if (existingConfig.llm.baseUrl) return existingConfig.llm.baseUrl;
+        return answers.provider === "anthropic"
+          ? "https://api.anthropic.com"
+          : "https://api.openai.com/v1";
+      },
     },
     {
       type: "input",
       name: "model",
       message: "模型名称:",
-      default: existingConfig.llm.model || "gpt-4o",
+      default: (answers: any) => {
+        if (existingConfig.llm.model) return existingConfig.llm.model;
+        return answers.provider === "anthropic"
+          ? "claude-sonnet-4-6"
+          : "gpt-4o";
+      },
     },
     {
       type: "password",
@@ -227,6 +237,13 @@ export async function runSetup(): Promise<void> {
   };
 
   saveConfig(config);
+
+  // Activate scheduling if enabled (setup wizard was missing this step)
+  if (config.schedule.enabled) {
+    scheduleOn(config);
+    console.log(`\n⏰ 定时任务已注册: ${config.schedule.cron}`);
+  }
+
   console.log("\n✅ 配置已保存到 ~/.daily-report/config.json");
   console.log("🎉 现在可以运行 daily-report 生成第一份日报！\n");
 }

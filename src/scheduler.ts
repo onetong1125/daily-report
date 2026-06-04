@@ -67,12 +67,41 @@ export function parseTimeExpression(input: string): string {
 }
 
 /**
+ * Resolve the path to the daily-report binary.
+ * Uses `which` to find the actual installed location,
+ * falling back to running via node + dist/index.js.
+ */
+function resolveBinPath(): string {
+  try {
+    const found = execSync("which daily-report 2>/dev/null || true", {
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+    if (found) return found;
+  } catch {
+    // `which` failed, use fallback
+  }
+
+  // Fallback: run via the current node + the compiled script
+  return `${process.execPath} ${path.resolve(__dirname, "index.js")}`;
+}
+
+/**
  * Enable scheduled daily report on macOS via launchd.
  */
 export function scheduleOn(config: DailyReportConfig): void {
   const cron = config.schedule.cron;
 
   if (process.platform === "darwin") {
+    // Resolve the actual binary path (which may differ on Apple Silicon vs Intel)
+    const binPath = resolveBinPath();
+
+    // If binPath contains a space (node + script fallback), split into
+    // separate ProgramArguments. Otherwise it's a direct symlink path.
+    const args = binPath.includes(" ")
+      ? [...binPath.split(" "), "--quiet"]
+      : [binPath, "--quiet"];
+
     // Create launchd plist
     const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -82,16 +111,16 @@ export function scheduleOn(config: DailyReportConfig): void {
     <string>${PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/daily-report</string>
-        <string>--quiet</string>
+${args.map((a) => `        <string>${a}</string>`).join("\n")}
     </array>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
         <integer>${cron.split(" ")[1]}</integer>
         <key>Minute</key>
-        <integer>${cron.split(" ")[0]}</integer>
-        <key>${cron.split(" ")[4] === "*" ? "" : "Weekday"}</key>
+        <integer>${cron.split(" ")[0]}</integer>${cron.split(" ")[4] !== "*" ? `
+        <key>Weekday</key>
+        <integer>${cron.split(" ")[4]}</integer>` : ""}
     </dict>
     <key>StandardOutPath</key>
     <string>${path.join(os.homedir(), ".daily-report", "logs", "stdout.log")}</string>
@@ -128,9 +157,7 @@ export function scheduleOn(config: DailyReportConfig): void {
 
       // Remove any existing daily-report entries
       const lines = existing.split("\n").filter((l) => !l.includes("daily-report"));
-      const binPath = process.execPath.includes("node")
-        ? `${process.execPath} ${path.resolve(__dirname, "..", "dist", "index.js")}`
-        : "/usr/local/bin/daily-report";
+      const binPath = resolveBinPath();
       lines.push(`${cron} ${binPath} --quiet # daily-report`);
 
       // Write new crontab

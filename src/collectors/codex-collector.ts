@@ -9,47 +9,41 @@ const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
  * Simple keyword/topic extraction (same strategy as Claude collector).
  * Does NOT call any LLM.
  */
-function extractTopics(messages: string[]): string {
+/**
+ * Extract a human-readable conversation summary from user messages.
+ * Takes the first few substantive messages as context excerpts.
+ */
+export function extractCodexSummary(messages: string[]): string {
   if (messages.length === 0) return "无对话内容";
 
-  const allText = messages.join(" ");
+  const noisePatterns = [
+    /^</,
+    /^You are/,
+    /^#!/,
+    /^Base directory for this skill/i,
+    /^\[Request interrupted/,
+    /^\[{/
+  ];
+  const isNoise = (m: string): boolean => noisePatterns.some((p) => p.test(m));
 
-  // Match meaningful CJK words (2+ chars) and English tech terms
-  const cjkWords = allText.match(/[一-鿿]{2,4}/g) || [];
-  const techTerms = allText.match(/\b(AI|LLM|API|CLI|UI|SQL|PR|Issue|commit|Git|GitHub|Claude|Codex|TypeScript|Python|Node\.js|React|Vue|Docker|K8s|RL|PPO|DQN|训练|推理|部署|测试|调试|修复|设计|重构|优化|日报|report|config|setup|安全|隐私|privacy|schedule)\b/gi) || [];
+  const substantive = messages
+    .map((m) => m.trim())
+    .filter((m) => m.length > 20)
+    .filter((m) => !isNoise(m));
 
-  // Count word frequencies
-  const wordFreq = new Map<string, number>();
-  for (const w of cjkWords) {
-    wordFreq.set(w, (wordFreq.get(w) || 0) + 1);
-  }
-  for (const t of techTerms) {
-    wordFreq.set(t, (wordFreq.get(t) || 0) + 3);
-  }
-
-  // Extract specific filenames
-  const fileMatches = allText.match(/\b[\w/-]+\.(ts|py|js|rs|go|java|md|json|yaml|toml)\b/gi) || [];
-  for (const f of fileMatches.slice(0, 5)) {
-    const basename = f.split("/").pop() || f;
-    wordFreq.set(basename, (wordFreq.get(basename) || 0) + 5);
-  }
-
-  // Filter stop words
-  const stopWords = new Set(["的", "了", "是", "我", "在", "有", "和", "不", "这", "你", "他", "也", "都", "要", "会", "就", "能", "对", "去", "很", "到", "说", "想", "看", "让", "给", "被", "把", "用", "做", "为", "可以", "什么", "怎么", "这个", "那个", "一个", "没有", "已经", "还是", "就是", "如果", "因为", "所以", "但是", "然后", "现在", "需要", "应该", "知道", "觉得", "问题", "我们", "他们", "自己", "不是", "比较", "出来", "起来", "时候", "可能"]);
-  const topTopics = [...wordFreq.entries()]
-    .filter(([w]) => !stopWords.has(w) && w.length > 1)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([word]) => word);
-
-  if (topTopics.length === 0) {
-    const totalChars = allText.length;
-    if (totalChars > 1000) return "有大量技术对话";
-    if (totalChars > 200) return "有简短对话";
+  if (substantive.length === 0) {
+    const totalChars = messages.join("").length;
+    if (totalChars > 2000) return "有大量技术对话";
+    if (totalChars > 300) return "有简短对话";
     return "几乎无对话内容";
   }
 
-  return `讨论了 ${topTopics.join("、")}`;
+  const excerpts = substantive.slice(0, 5).map((m) => {
+    const cleaned = m.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+    return cleaned.length > 120 ? cleaned.slice(0, 117) + "..." : cleaned;
+  });
+
+  return excerpts.join(" | ");
 }
 
 /**
@@ -141,7 +135,7 @@ function parseCodexSession(
       sessionId = path.basename(filePath, ".jsonl").replace("rollout-", "");
     }
 
-    const topicSummary = extractTopics(userMessages);
+    const topicSummary = extractCodexSummary(userMessages);
 
     return {
       source: "codex",

@@ -37,7 +37,7 @@ export function collectGitEvents(
           source: "git",
           repo: repoPath,
           timestamp: isoTime,
-          entity_id: sha,
+          entity_id: sha.slice(0, 7),
           entity_type: "commit",
           summary,
           related_entities: [],

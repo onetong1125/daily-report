@@ -362,8 +362,3 @@ scheduleCmd
 // Parse
 // ============================================================
 program.parse(process.argv);
-
-// If no arguments, show help
-if (!process.argv.slice(2).length) {
-  program.outputHelp();
-}
