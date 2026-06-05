@@ -447,6 +447,55 @@ function getErrorReason(err: unknown): string {
 }
 
 /**
+ * 判断 LLM 调用错误是否应该重试。
+ * 重试：网络错误、5xx、429、超时、非标准错误
+ * 不重试：其他 4xx、空内容、JSON 解析失败
+ */
+export function shouldRetry(err: unknown): boolean {
+  // 非 Error 实例 → 未知异常，保守重试
+  if (!(err instanceof Error)) {
+    return true;
+  }
+
+  const msg = err.message;
+
+  // 网络错误（fetch 底层异常，如 DNS/连接拒绝）
+  // fetch 抛出的 TypeError 通常消息包含 "fetch" 或 "network"
+  if (err.name === "TypeError") {
+    return true;
+  }
+
+  // AbortError / 超时
+  if (err.name === "AbortError" || err.name === "TimeoutError") {
+    return true;
+  }
+
+  // 自构造错误的分类：通过消息模式匹配
+  // HTTP 5xx
+  if (msg.includes("API 返回 5")) {
+    return true;
+  }
+
+  // HTTP 429
+  if (msg.includes("API 返回 429")) {
+    return true;
+  }
+
+  // 其他 4xx（400, 401, 403...）不重试
+  if (msg.includes("API 返回 4")) {
+    return false;
+  }
+
+  // 空内容
+  if (msg.includes("API 返回空内容")) {
+    return false;
+  }
+
+  // JSON 解析失败及其他 → 不重试
+  return false;
+}
+
+/**
  * Generate daily report by calling the configured LLM API.
  * Supports OpenAI-compatible and Anthropic APIs.
  * Retries with exponential backoff on transient failures.
