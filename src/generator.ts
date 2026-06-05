@@ -324,9 +324,133 @@ export function templateReport(
   };
 }
 
+// ============================================================
+// LLM Retry Support
+// ============================================================
+
+/**
+ * 判断 LLM 调用错误是否应该重试。
+ * 重试：网络错误、5xx、429、超时、非标准错误
+ * 不重试：其他 4xx、空内容、JSON 解析失败
+ */
+export function shouldRetry(err: unknown): boolean {
+  // 非 Error 实例 → 未知异常，保守重试
+  if (!(err instanceof Error)) {
+    return true;
+  }
+
+  const msg = err.message;
+
+  // 网络错误（fetch 底层异常，如 DNS/连接拒绝）
+  if (err.name === "TypeError") {
+    return true;
+  }
+
+  // AbortError / 超时
+  if (err.name === "AbortError" || err.name === "TimeoutError") {
+    return true;
+  }
+
+  // 自构造错误的分类：通过消息模式匹配
+  // HTTP 5xx
+  if (msg.includes("API 返回 5")) {
+    return true;
+  }
+
+  // HTTP 429
+  if (msg.includes("API 返回 429")) {
+    return true;
+  }
+
+  // 其他 4xx（400, 401, 403...）不重试
+  if (msg.includes("API 返回 4")) {
+    return false;
+  }
+
+  // 空内容
+  if (msg.includes("API 返回空内容")) {
+    return false;
+  }
+
+  // JSON 解析失败及其他 → 不重试
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 带指数退避的重试执行器。
+ * 每次重试前等待 baseDelayMs * 2^(attempt-1)，上限 30s。
+ */
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  baseDelayMs: number
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      if (attempt > 1) {
+        console.log(`✅ LLM API 第 ${attempt}/${maxRetries} 次重试成功`);
+      }
+      return result;
+    } catch (err: unknown) {
+      lastError = err;
+
+      if (!shouldRetry(err) || attempt === maxRetries) {
+        break;
+      }
+
+      const delayMs = Math.min(baseDelayMs * Math.pow(2, attempt - 1), 30000);
+      const delaySec = (delayMs / 1000).toFixed(0);
+
+      const reason = getErrorReason(err);
+      console.warn(
+        `⚠️  LLM API 调用失败 (${reason})，${delaySec}s 后第 ${attempt}/${maxRetries} 次重试...`
+      );
+
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+/**
+ * 从错误中提取可读的原因描述
+ */
+function getErrorReason(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return "未知错误";
+  }
+
+  const msg = err.message;
+
+  if (err.name === "AbortError" || err.name === "TimeoutError") {
+    return "超时";
+  }
+  if (err.name === "TypeError") {
+    return "网络错误";
+  }
+
+  // 提取 HTTP 状态码
+  const httpMatch = msg.match(/API 返回 (\d+)/);
+  if (httpMatch) {
+    return `HTTP ${httpMatch[1]}`;
+  }
+
+  return err.message.slice(0, 50);
+}
+
 /**
  * Generate daily report by calling the configured LLM API.
- * Falls back to template if API call fails.
+ * Supports OpenAI-compatible and Anthropic APIs.
+ * Retries with exponential backoff on transient failures.
+ * Falls back to template if all retries fail.
  */
 export async function generateReport(
   grouped: GroupedEvents,
@@ -345,12 +469,15 @@ export async function generateReport(
   const systemPrompt = "你是一个专业的工作日报助手。请用简洁、有条理的中文回复。";
   const maxTokens = Math.min(config.privacy.maxTokensSent, 2048);
   const isAnthropic = config.llm.provider === "anthropic";
+  const maxRetries = config.llm.maxRetries ?? 5;
+  const retryBaseDelayMs = config.llm.retryBaseDelayMs ?? 1000;
+  const timeoutMs = config.llm.requestTimeoutMs ?? 30000;
 
   const url = isAnthropic
     ? `${config.llm.baseUrl.replace(/\/$/, "")}/v1/messages`
     : `${config.llm.baseUrl.replace(/\/$/, "")}/chat/completions`;
 
-  try {
+  const callLLM = async (): Promise<string> => {
     let body: string;
     let headers: Record<string, string>;
 
@@ -389,7 +516,7 @@ export async function generateReport(
       method: "POST",
       headers,
       body,
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -415,10 +542,15 @@ export async function generateReport(
       throw new Error("API 返回空内容");
     }
 
+    return content;
+  };
+
+  try {
+    const content = await retryWithBackoff(callLLM, maxRetries, retryBaseDelayMs);
     return parseResponse(content, date);
   } catch (err: any) {
-    console.warn(`⚠️  LLM API 调用失败: ${err.message}`);
-    console.warn("   回退到模板生成");
+    console.warn(`❌ LLM API 已重试 ${maxRetries}/${maxRetries} 次，全部失败，回退到模板生成`);
+    console.warn(`   最后错误: ${err?.message || err}`);
     return templateReport(grouped, date, manualTodo);
   }
 }
