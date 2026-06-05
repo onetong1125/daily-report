@@ -495,6 +495,76 @@ export function shouldRetry(err: unknown): boolean {
   return false;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 带指数退避的重试执行器。
+ * 每次重试前等待 baseDelayMs * 2^(attempt-1)，上限 30s。
+ */
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  baseDelayMs: number
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      if (attempt > 1) {
+        console.log(`✅ LLM API 第 ${attempt}/${maxRetries} 次重试成功`);
+      }
+      return result;
+    } catch (err: unknown) {
+      lastError = err;
+
+      if (!shouldRetry(err) || attempt === maxRetries) {
+        break;
+      }
+
+      const delayMs = Math.min(baseDelayMs * Math.pow(2, attempt - 1), 30000);
+      const delaySec = (delayMs / 1000).toFixed(0);
+
+      const reason = getErrorReason(err);
+      console.warn(
+        `⚠️  LLM API 调用失败 (${reason})，${delaySec}s 后第 ${attempt}/${maxRetries} 次重试...`
+      );
+
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+/**
+ * 从错误中提取可读的原因描述
+ */
+function getErrorReason(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return "未知错误";
+  }
+
+  const msg = err.message;
+
+  if (err.name === "AbortError" || err.name === "TimeoutError") {
+    return "超时";
+  }
+  if (err.name === "TypeError") {
+    return "网络错误";
+  }
+
+  // 提取 HTTP 状态码
+  const httpMatch = msg.match(/API 返回 (\d+)/);
+  if (httpMatch) {
+    return `HTTP ${httpMatch[1]}`;
+  }
+
+  return err.message.slice(0, 50);
+}
+
 /**
  * Generate daily report by calling the configured LLM API.
  * Supports OpenAI-compatible and Anthropic APIs.
