@@ -13,6 +13,9 @@ const DEFAULT_CONFIG: DailyReportConfig = {
     baseUrl: "https://api.openai.com/v1",
     apiKey: "${OPENAI_API_KEY}",
     model: "gpt-4o",
+    maxRetries: 5,
+    retryBaseDelayMs: 1000,
+    requestTimeoutMs: 30000,
   },
   report: {
     outputDir: path.join(CONFIG_DIR, "reports"),
