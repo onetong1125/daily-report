@@ -40,8 +40,9 @@ export interface LLMConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
-  maxRetries?: number;        // 最大重试次数，默认 5
-  retryBaseDelayMs?: number;  // 基础延迟 ms，默认 1000
+  maxRetries?: number;         // 最大重试次数，默认 5
+  retryBaseDelayMs?: number;   // 基础延迟 ms，默认 1000
+  requestTimeoutMs?: number;   // 单次请求超时 ms，默认 30000
 }
 ```
 
@@ -49,6 +50,7 @@ export interface LLMConfig {
 ```typescript
 maxRetries: 5,
 retryBaseDelayMs: 1000,
+requestTimeoutMs: 30000,
 ```
 
 ### 2.2 重试判定
@@ -68,7 +70,7 @@ retryBaseDelayMs: 1000,
 - 公式：`delay = min(baseDelayMs * 2^(attempt-1), 30000)`
 - 默认 baseDelayMs = 1000ms
 - 实际等待序列：1s → 2s → 4s → 8s → 16s
-- 每次重试独立 60s 超时
+- 每次重试独立超时，由 `requestTimeoutMs` 控制（默认 30s）
 
 ### 2.4 核心函数
 
@@ -98,7 +100,7 @@ retryWithBackoff(fn, config): Promise<T> — 带退避的重试执行器
 
 | 文件 | 变更 |
 |------|------|
-| `src/types.ts` | LLMConfig 添加 maxRetries、retryBaseDelayMs |
+| `src/types.ts` | LLMConfig 添加 maxRetries、retryBaseDelayMs、requestTimeoutMs |
 | `src/config.ts` | 默认配置添加重试字段 |
 | `src/generator.ts` | 添加 shouldRetry、sleep、retryWithBackoff；改造 generateReport |
 | `src/index.ts` | 添加 --max-retries CLI 选项 |
