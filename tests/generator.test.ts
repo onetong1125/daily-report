@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseResponse, templateReport, buildPrompt } from "../src/generator";
+import { parseResponse, templateReport, buildPrompt, shouldRetry, retryWithBackoff } from "../src/generator";
 import { SanitizedEvent, GroupedEvents, DailyReport } from "../src/types";
 
 function makeEvent(overrides: Partial<SanitizedEvent> = {}): SanitizedEvent {
@@ -359,5 +359,74 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("TL;DR");
     expect(prompt).toContain("GIT_SECTION");
     expect(prompt).toContain("TOMORROW");
+  });
+});
+
+// ============================================================
+// shouldRetry
+// ============================================================
+describe("shouldRetry", () => {
+  it("returns true for TypeError (network errors)", () => {
+    const err = new TypeError("fetch failed");
+    err.name = "TypeError";
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for AbortError (timeout)", () => {
+    const err = new Error("The operation was aborted");
+    err.name = "AbortError";
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for HTTP 5xx", () => {
+    const err = new Error("API 返回 502: Bad Gateway");
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for HTTP 503", () => {
+    const err = new Error("API 返回 503: Service Unavailable");
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for HTTP 429", () => {
+    const err = new Error("API 返回 429: Too Many Requests");
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns false for HTTP 400", () => {
+    const err = new Error("API 返回 400: Bad Request");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for HTTP 401", () => {
+    const err = new Error("API 返回 401: Unauthorized");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for HTTP 403", () => {
+    const err = new Error("API 返回 403: Forbidden");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for empty content error", () => {
+    const err = new Error("API 返回空内容");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for JSON parse errors", () => {
+    const err = new SyntaxError("Unexpected token");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns true for non-Error throwables (bare string)", () => {
+    expect(shouldRetry("some string error")).toBe(true);
+  });
+
+  it("returns true for non-Error throwables (null)", () => {
+    expect(shouldRetry(null)).toBe(true);
+  });
+
+  it("returns true for non-Error throwables (custom object)", () => {
+    expect(shouldRetry({ code: "UNKNOWN" })).toBe(true);
   });
 });
