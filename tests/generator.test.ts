@@ -430,3 +430,68 @@ describe("shouldRetry", () => {
     expect(shouldRetry({ code: "UNKNOWN" })).toBe(true);
   });
 });
+
+// ============================================================
+// retryWithBackoff
+// ============================================================
+describe("retryWithBackoff", () => {
+  it("returns result immediately on first success (no retry)", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      return "success";
+    };
+
+    const result = await retryWithBackoff(fn, 5, 1000);
+    expect(result).toBe("success");
+    expect(callCount).toBe(1);
+  });
+
+  it("retries and succeeds on second attempt", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error("API 返回 502: Bad Gateway");
+      }
+      return "success";
+    };
+
+    const result = await retryWithBackoff(fn, 5, 10); // 10ms base delay for fast test
+    expect(result).toBe("success");
+    expect(callCount).toBe(2);
+  });
+
+  it("retries max times then throws last error", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      throw new Error("API 返回 503: Service Unavailable");
+    };
+
+    await expect(retryWithBackoff(fn, 3, 10)).rejects.toThrow("API 返回 503");
+    expect(callCount).toBe(3);
+  });
+
+  it("does NOT retry on non-retryable error (4xx)", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      throw new Error("API 返回 401: Unauthorized");
+    };
+
+    await expect(retryWithBackoff(fn, 5, 10)).rejects.toThrow("API 返回 401");
+    expect(callCount).toBe(1);
+  });
+
+  it("does NOT retry on empty content", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      throw new Error("API 返回空内容");
+    };
+
+    await expect(retryWithBackoff(fn, 5, 10)).rejects.toThrow("API 返回空内容");
+    expect(callCount).toBe(1);
+  });
+});
