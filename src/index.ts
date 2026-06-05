@@ -33,12 +33,23 @@ program
   .option("-d, --date <date>", "指定日期 (YYYY-MM-DD)，默认今天")
   .option("--tz <timezone>", "指定时区，覆盖配置文件")
   .option("--dry-run", "只采集和预览数据，不调用 LLM")
+  .option("--max-retries <number>", "LLM 调用最大重试次数，默认 5")
   .option("--no-save", "不保存 Markdown 文件")
   .option("-q, --quiet", "只保存文件，不打印到终端")
   .option("--todo <text>", "手动补充明天的行动计划")
   .option("-v, --verbose", "详细日志输出")
   .action(async (options) => {
     const config = loadConfig();
+
+    if (options.maxRetries !== undefined) {
+      const maxRetries = parseInt(options.maxRetries, 10);
+      if (isNaN(maxRetries) || maxRetries < 0) {
+        console.warn(`⚠️  无效的 --max-retries 值: ${options.maxRetries}，使用默认值`);
+      } else {
+        config.llm.maxRetries = maxRetries;
+      }
+    }
+
     const tz = options.tz || config.report.timezone;
 
     if (options.verbose) {
