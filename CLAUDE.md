@@ -5,14 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run build          # tsc compilation (src/ → dist/)
 npm run dev -- --dry-run  # tsx hot-reload execution with CLI flags
-npm test               # vitest run (single pass, 117 tests)
-npm run test:watch     # vitest in watch mode
-npm run test:coverage  # vitest with coverage report
+npm run build             # tsc compilation (src/ → dist/)
+npm run release           # build + pack + install as independent global copy
+npm test                  # vitest run (single pass)
+npm run test:watch        # vitest in watch mode
+npm run test:coverage     # vitest with coverage report
 ```
 
 - `npm run dev -- <args>` passes flags directly to the CLI (e.g. `--date 2026-06-01`, `--verbose`, `--dry-run`).
+- `npm run release` builds, packs into .tgz, and installs globally as a **real copy** (not a symlink). The installed version is frozen — changing the project's `package.json` afterward does not affect the global command.
+- The version shown by `daily-report --version` is read from the installed copy's `package.json` at runtime.
 - To run a single test file: `npx vitest run tests/formatter.test.ts`
 
 ## Architecture

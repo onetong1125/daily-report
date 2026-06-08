@@ -1,13 +1,14 @@
 {
   "name": "daily-report",
-  "version": "0.1.0",
-  "description": "自动日报工具：聚合 Git、GitHub、Claude Code、Codex CLI 的每日活动，生成日报和明日行动建议",
+  "version": "0.1.5",
+  "description": "\u81ea\u52a8\u65e5\u62a5\u5de5\u5177\uff1a\u805a\u5408 Git\u3001GitHub\u3001Claude Code\u3001Codex CLI \u7684\u6bcf\u65e5\u6d3b\u52a8\uff0c\u751f\u6210\u65e5\u62a5\u548c\u660e\u65e5\u884c\u52a8\u5efa\u8bae",
   "main": "dist/index.js",
   "bin": {
     "daily-report": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
+    "release": "npm run build && npm pack && npm install -g daily-report-*.tgz && rm daily-report-*.tgz",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

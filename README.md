@@ -27,8 +27,7 @@ npm install -g daily-report
 git clone <repo-url>
 cd daily-report
 npm install
-npm run build
-npm link
+npm run release     # 编译 + 安装到全局
 ```
 
 ## 前置依赖
@@ -181,10 +180,21 @@ daily-report schedule status               # 查看状态
 git clone <repo-url>
 cd daily-report
 npm install
-npm run dev -- --dry-run    # tsx 热执行
-npm run build               # 编译
-node dist/index.js          # 运行
+
+# 日常开发
+npm run dev -- --dry-run    # tsx 实时执行源码，版本号实时读取 package.json
+npm run build               # 编译 TypeScript → dist/
+daily-report --version      # 查看全局命令版本（冻结在上次 release 时）
+
+# 版本发布：将当前代码编译打包，安装为全局独立副本
+npm run release             # = build + pack + install -g
 ```
+
+### 版本机制
+
+- `npm run dev` 运行时从项目 `package.json` 实时读取版本号，改动立刻生效。
+- `daily-report` 全局命令读取的是发布时冻结的副本，与项目 `package.json` 脱钩。
+- `npm run release` 将当前版本编译打包安装到全局，之后改 `package.json` 不影响全局命令。
 
 ## 许可证
 
