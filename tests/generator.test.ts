@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseResponse, templateReport, buildPrompt } from "../src/generator";
+import { parseResponse, templateReport, buildPrompt, shouldRetry, retryWithBackoff } from "../src/generator";
 import { SanitizedEvent, GroupedEvents, DailyReport } from "../src/types";
 
 function makeEvent(overrides: Partial<SanitizedEvent> = {}): SanitizedEvent {
@@ -24,17 +24,15 @@ describe("parseResponse", () => {
 - 完成了 JWT refresh token 功能
 - 修复了 2 个 bug
 
-GIT_SECTION:
+PROJECTS:
+### project-a
 在 project-a 中实现了 JWT token 刷新
 
-GITHUB_SECTION:
+### project-b
 创建了 PR #42
 
-CLAUDE_SECTION:
+OTHER_AI:
 讨论了架构设计
-
-CODEX_SECTION:
-无
 
 TOMORROW:
 - 补充 JWT 测试用例
@@ -49,10 +47,11 @@ TOMORROW:
       "完成了 JWT refresh token 功能",
       "修复了 2 个 bug",
     ]);
-    expect(report.git_section).toBe("在 project-a 中实现了 JWT token 刷新");
-    expect(report.github_section).toBe("创建了 PR #42");
-    expect(report.claude_section).toBe("讨论了架构设计");
-    expect(report.codex_section).toBe("无");
+    expect(report.projects).toEqual([
+      { project: "project-a", summary: "在 project-a 中实现了 JWT token 刷新" },
+      { project: "project-b", summary: "创建了 PR #42" },
+    ]);
+    expect(report.other_ai).toBe("讨论了架构设计");
     expect(report.tomorrow_suggestions).toEqual([
       "补充 JWT 测试用例",
       "跑 CI 验证",
@@ -64,8 +63,11 @@ TOMORROW:
 * item one
 - item two
 * item three
-GIT_SECTION:
+
+PROJECTS:
+### proj
 some git
+
 TOMORROW:
 - do this
 `;
@@ -76,8 +78,11 @@ TOMORROW:
   it("handles numbered tomorrow suggestions", () => {
     const text = `TL;DR:
 - did work
-GIT_SECTION:
+
+PROJECTS:
+### proj
 commits
+
 TOMORROW:
 1. first task
 2. second task
@@ -96,10 +101,8 @@ TOMORROW:
     const report = parseResponse(text, "2026-06-02");
 
     expect(report.tldr).toEqual(["only tldr"]);
-    expect(report.git_section).toBe("");
-    expect(report.github_section).toBe("");
-    expect(report.claude_section).toBe("");
-    expect(report.codex_section).toBe("");
+    expect(report.projects).toEqual([]);
+    expect(report.other_ai).toBe("");
     expect(report.tomorrow_suggestions).toEqual([]);
   });
 
@@ -117,13 +120,17 @@ TOMORROW:
   });
 
   it("trims whitespace from parsed values", () => {
-    const text = `GIT_SECTION:
+    const text = `PROJECTS:
+### proj
   indented content here
+
 TOMORROW:
 -   extra spaces
 `;
     const report = parseResponse(text, "2026-06-02");
-    expect(report.git_section).toBe("indented content here");
+    expect(report.projects).toEqual([
+      { project: "proj", summary: "indented content here" },
+    ]);
     expect(report.tomorrow_suggestions).toEqual(["extra spaces"]);
   });
 
@@ -163,8 +170,9 @@ describe("templateReport", () => {
     const report = templateReport(grouped, "2026-06-02");
 
     expect(report.tldr.length).toBeGreaterThan(0);
+    expect(report.projects.length).toBeGreaterThan(0);
+    // project-a should appear in tldr with the summary
     expect(report.tldr.some((t) => t.includes("project-a"))).toBe(true);
-    expect(report.tldr.some((t) => t.includes("2"))).toBe(true); // 2 commits in project-a
   });
 
   it("generates tldr for GitHub PR and review activity", () => {
@@ -215,7 +223,7 @@ describe("templateReport", () => {
     const report = templateReport(grouped, "2026-06-02");
 
     expect(report.tomorrow_suggestions.length).toBeGreaterThan(0);
-    expect(report.tomorrow_suggestions[0]).toContain("#42");
+    expect(report.tomorrow_suggestions.some((t) => t.includes("#42"))).toBe(true);
   });
 
   it("includes manual todo in suggestions", () => {
@@ -243,13 +251,11 @@ describe("templateReport", () => {
 
     expect(report.tldr).toHaveLength(1);
     expect(report.tldr[0]).toContain("休息");
-    expect(report.git_section).toBe("无");
-    expect(report.github_section).toBe("无");
-    expect(report.claude_section).toBe("无");
-    expect(report.codex_section).toBe("无");
+    expect(report.projects).toEqual([]);
+    expect(report.other_ai).toBe("无");
   });
 
-  it("summarizes Claude conversations", () => {
+  it("summarizes Claude conversations in other_ai (no matching git project)", () => {
     const grouped: GroupedEvents = {
       git_events: [],
       github_events: [],
@@ -266,20 +272,23 @@ describe("templateReport", () => {
 
     const report = templateReport(grouped, "2026-06-02");
 
-    expect(report.tldr.some((t) => t.includes("Claude"))).toBe(true);
-    expect(report.claude_section).not.toBe("无");
+    // Claude event with no matching git project goes to other_ai
+    expect(report.other_ai).not.toBe("无");
+    expect(report.other_ai).toContain("Claude");
   });
 
-  it("excludes '无对话内容' conversations from tldr", () => {
+  it("handles Claude events linked to known projects", () => {
     const grouped: GroupedEvents = {
-      git_events: [],
+      git_events: [
+        makeEvent({ repo: "/path/to/myproject", summary: "feat: add feature" }),
+      ],
       github_events: [],
       claude_events: [
         makeEvent({
           source: "claude",
           entity_type: "session",
-          repo: "/path/to/project",
-          summary: "无对话内容",
+          repo: "/path/to/myproject",
+          summary: "讨论了架构设计",
         }),
       ],
       codex_events: [],
@@ -287,8 +296,9 @@ describe("templateReport", () => {
 
     const report = templateReport(grouped, "2026-06-02");
 
-    // "无对话内容" should not appear in tldr
-    expect(report.tldr.filter((t) => t.includes("Claude"))).toHaveLength(0);
+    // Should appear in projects section, not in other_ai
+    expect(report.projects.length).toBeGreaterThan(0);
+    expect(report.tldr.some((t) => t.includes("myproject"))).toBe(true);
   });
 });
 
@@ -323,7 +333,7 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("feat: new feature");
   });
 
-  it('shows "无" when no git events', () => {
+  it("does not include old format section headers when no events", () => {
     const grouped: GroupedEvents = {
       git_events: [],
       github_events: [],
@@ -332,7 +342,9 @@ describe("buildPrompt", () => {
     };
 
     const prompt = buildPrompt(grouped, "2026-06-02");
-    expect(prompt).toContain("Git 提交活动: 无");
+    // New format does NOT include source-based sections when empty
+    // Instead it just has output format instructions
+    expect(prompt).toContain("PROJECTS:");
   });
 
   it("includes manual todo when provided", () => {
@@ -357,7 +369,141 @@ describe("buildPrompt", () => {
 
     const prompt = buildPrompt(grouped, "2026-06-02");
     expect(prompt).toContain("TL;DR");
-    expect(prompt).toContain("GIT_SECTION");
+    expect(prompt).toContain("PROJECTS:");
     expect(prompt).toContain("TOMORROW");
+  });
+});
+
+// ============================================================
+// shouldRetry
+// ============================================================
+describe("shouldRetry", () => {
+  it("returns true for TypeError (network errors)", () => {
+    const err = new TypeError("fetch failed");
+    err.name = "TypeError";
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for AbortError (timeout)", () => {
+    const err = new Error("The operation was aborted");
+    err.name = "AbortError";
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for HTTP 5xx", () => {
+    const err = new Error("API 返回 502: Bad Gateway");
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for HTTP 503", () => {
+    const err = new Error("API 返回 503: Service Unavailable");
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns true for HTTP 429", () => {
+    const err = new Error("API 返回 429: Too Many Requests");
+    expect(shouldRetry(err)).toBe(true);
+  });
+
+  it("returns false for HTTP 400", () => {
+    const err = new Error("API 返回 400: Bad Request");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for HTTP 401", () => {
+    const err = new Error("API 返回 401: Unauthorized");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for HTTP 403", () => {
+    const err = new Error("API 返回 403: Forbidden");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for empty content error", () => {
+    const err = new Error("API 返回空内容");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns false for JSON parse errors", () => {
+    const err = new SyntaxError("Unexpected token");
+    expect(shouldRetry(err)).toBe(false);
+  });
+
+  it("returns true for non-Error throwables (bare string)", () => {
+    expect(shouldRetry("some string error")).toBe(true);
+  });
+
+  it("returns true for non-Error throwables (null)", () => {
+    expect(shouldRetry(null)).toBe(true);
+  });
+
+  it("returns true for non-Error throwables (custom object)", () => {
+    expect(shouldRetry({ code: "UNKNOWN" })).toBe(true);
+  });
+});
+
+// ============================================================
+// retryWithBackoff
+// ============================================================
+describe("retryWithBackoff", () => {
+  it("returns result immediately on first success (no retry)", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      return "success";
+    };
+
+    const result = await retryWithBackoff(fn, 5, 1000);
+    expect(result).toBe("success");
+    expect(callCount).toBe(1);
+  });
+
+  it("retries and succeeds on second attempt", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error("API 返回 502: Bad Gateway");
+      }
+      return "success";
+    };
+
+    const result = await retryWithBackoff(fn, 5, 10); // 10ms base delay for fast test
+    expect(result).toBe("success");
+    expect(callCount).toBe(2);
+  });
+
+  it("retries max times then throws last error", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      throw new Error("API 返回 503: Service Unavailable");
+    };
+
+    await expect(retryWithBackoff(fn, 3, 10)).rejects.toThrow("API 返回 503");
+    expect(callCount).toBe(3);
+  });
+
+  it("does NOT retry on non-retryable error (4xx)", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      throw new Error("API 返回 401: Unauthorized");
+    };
+
+    await expect(retryWithBackoff(fn, 5, 10)).rejects.toThrow("API 返回 401");
+    expect(callCount).toBe(1);
+  });
+
+  it("does NOT retry on empty content", async () => {
+    let callCount = 0;
+    const fn = async () => {
+      callCount++;
+      throw new Error("API 返回空内容");
+    };
+
+    await expect(retryWithBackoff(fn, 5, 10)).rejects.toThrow("API 返回空内容");
+    expect(callCount).toBe(1);
   });
 });

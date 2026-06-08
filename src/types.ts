@@ -46,6 +46,9 @@ export interface LLMConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  maxRetries?: number;         // 最大重试次数，默认 5
+  retryBaseDelayMs?: number;   // 基础延迟 ms，默认 1000
+  requestTimeoutMs?: number;   // 单次请求超时 ms，默认 30000
 }
 
 export interface ReportConfig {

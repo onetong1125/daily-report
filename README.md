@@ -65,6 +65,7 @@ daily-report --no-save               # 不保存 Markdown 文件
 daily-report --quiet                 # 只保存文件，不打印
 daily-report --todo "完成测试,提 PR"  # 手动补充明日计划
 daily-report --verbose               # 详细日志
+daily-report --max-retries 3         # LLM 调用最大重试次数，默认 5
 ```
 
 ### 配置管理
@@ -101,7 +102,10 @@ daily-report schedule status               # 查看状态
     "provider": "openai-compatible",
     "baseUrl": "https://api.openai.com/v1",
     "apiKey": "${OPENAI_API_KEY}",
-    "model": "gpt-4o"
+    "model": "gpt-4o",
+    "maxRetries": 5,
+    "retryBaseDelayMs": 1000,
+    "requestTimeoutMs": 30000
   },
   "report": {
     "outputDir": "~/.daily-report/reports",
@@ -121,6 +125,8 @@ daily-report schedule status               # 查看状态
 
 - `apiKey` 支持 `${ENV_VAR}` 语法从环境变量读取，避免密钥写入配置文件
 - `baseUrl` 支持任意 OpenAI 兼容接口（含第三方中转站）
+- `maxRetries` LLM 调用失败后的最大重试次数（指数退避：1s → 2s → 4s → 8s → 16s，上限 30s）
+- `requestTimeoutMs` 单次 LLM 请求超时，默认 30s
 
 ## 安全与隐私
 
