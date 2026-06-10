@@ -18,13 +18,23 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+function getVersion(): string {
+  // 运行时读取 package.json：dev 模式读到项目实时版本，全局安装读到安装时的副本
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf-8")
+    ).version;
+  } catch {
+    return "unknown";
+  }
+}
+
 const program = new Command();
-const VERSION = "0.1.0";
 
 program
   .name("daily-report")
   .description("自动日报工具：聚合 Git、GitHub、Claude Code、Codex CLI 的每日活动")
-  .version(VERSION);
+  .version(getVersion());
 
 // ============================================================
 // Default command: generate report
