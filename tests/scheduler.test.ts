@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseTimeExpression } from "../src/scheduler";
+import { cronToLaunchdCalendarIntervals, parseTimeExpression } from "../src/scheduler";
 
 describe("parseTimeExpression", () => {
   // --- Cron pass-through ---
@@ -64,5 +64,50 @@ describe("parseTimeExpression", () => {
 
   it("defaults to all days when no frequency is given", () => {
     expect(parseTimeExpression("12:00")).toBe("00 12 * * *");
+  });
+});
+
+describe("cronToLaunchdCalendarIntervals", () => {
+  it("converts a daily cron expression to one launchd interval", () => {
+    expect(cronToLaunchdCalendarIntervals("00 21 * * *")).toEqual([
+      { Hour: 21, Minute: 0 },
+    ]);
+  });
+
+  it("expands weekday ranges because launchd Weekday is a single integer", () => {
+    expect(cronToLaunchdCalendarIntervals("0 18 * * 1-5")).toEqual([
+      { Weekday: 1, Hour: 18, Minute: 0 },
+      { Weekday: 2, Hour: 18, Minute: 0 },
+      { Weekday: 3, Hour: 18, Minute: 0 },
+      { Weekday: 4, Hour: 18, Minute: 0 },
+      { Weekday: 5, Hour: 18, Minute: 0 },
+    ]);
+  });
+
+  it("expands comma-separated weekend days", () => {
+    expect(cronToLaunchdCalendarIntervals("30 9 * * 0,6")).toEqual([
+      { Weekday: 0, Hour: 9, Minute: 30 },
+      { Weekday: 6, Hour: 9, Minute: 30 },
+    ]);
+  });
+
+  it("expands stepped minute expressions", () => {
+    expect(cronToLaunchdCalendarIntervals("*/20 8 * * *")).toEqual([
+      { Hour: 8, Minute: 0 },
+      { Hour: 8, Minute: 20 },
+      { Hour: 8, Minute: 40 },
+    ]);
+  });
+
+  it("normalizes cron Sunday 7 to launchd Sunday 0", () => {
+    expect(cronToLaunchdCalendarIntervals("0 18 * * 7")).toEqual([
+      { Weekday: 0, Hour: 18, Minute: 0 },
+    ]);
+  });
+
+  it("rejects cron expressions that launchd cannot safely represent", () => {
+    expect(() => cronToLaunchdCalendarIntervals("0 18 1 * 1")).toThrow(
+      /day-of-month and weekday/
+    );
   });
 });

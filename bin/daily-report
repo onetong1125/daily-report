@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+SOURCE=$0
+while [ -h "$SOURCE" ]; do
+  DIR=$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)
+  TARGET=$(readlink "$SOURCE")
+  case "$TARGET" in
+    /*) SOURCE=$TARGET ;;
+    *) SOURCE=$DIR/$TARGET ;;
+  esac
+done
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)
+PACKAGE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+PATH="$PACKAGE_DIR/node_modules/.bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+export PATH
+
+if command -v node >/dev/null 2>&1; then
+  exec node "$PACKAGE_DIR/dist/index.js" "$@"
+fi
+
+cat >&2 <<'EOF'
+daily-report requires Node.js, but node was not found in PATH.
+Install Node.js and try again.
+EOF
+exit 127

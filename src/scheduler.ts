@@ -1,9 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { DailyReportConfig } from "./types";
-import { saveConfig, loadConfig } from "./config";
+import { saveConfig } from "./config";
 
 const PLIST_LABEL = "com.daily-report";
 const PLIST_PATH = path.join(
@@ -12,6 +12,14 @@ const PLIST_PATH = path.join(
   "LaunchAgents",
   `${PLIST_LABEL}.plist`
 );
+
+export interface LaunchdCalendarInterval {
+  Minute?: number;
+  Hour?: number;
+  Day?: number;
+  Month?: number;
+  Weekday?: number;
+}
 
 /**
  * Convert friendly time format to cron expression.
@@ -66,44 +74,182 @@ export function parseTimeExpression(input: string): string {
   return `${minute} ${hour} * * ${dayOfWeek}`;
 }
 
-/**
- * Resolve the path to the daily-report binary.
- * Uses `which` to find the actual installed location,
- * falling back to running via node + dist/index.js.
- */
-function resolveBinPath(): string {
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+function getLaunchctlDomain(): string {
+  const getuid = process.getuid;
+  return `gui/${typeof getuid === "function" ? getuid() : os.userInfo().uid}`;
+}
+
+function resolveDailyReportLauncher(): string {
   try {
-    const found = execSync("which daily-report 2>/dev/null || true", {
+    const found = execSync("command -v daily-report 2>/dev/null || true", {
       encoding: "utf-8",
       stdio: "pipe",
     }).trim();
     if (found) return found;
   } catch {
-    // `which` failed, use fallback
+    // Fall through to a clearer error below.
   }
 
-  // Fallback: run via the current node + the compiled script
-  return `${process.execPath} ${path.resolve(__dirname, "index.js")}`;
+  throw new Error("Cannot find the global daily-report command. Run `npm install -g daily-report` before enabling schedule.");
 }
 
-/**
- * Enable scheduled daily report on macOS via launchd.
- */
-export function scheduleOn(config: DailyReportConfig): void {
-  const cron = config.schedule.cron;
+function resolveScheduledCommand(): string[] {
+  return [resolveDailyReportLauncher()];
+}
 
-  if (process.platform === "darwin") {
-    // Resolve the actual binary path (which may differ on Apple Silicon vs Intel)
-    const binPath = resolveBinPath();
+function serializeShellCommand(args: string[]): string {
+  return args.map(shellQuote).join(" ");
+}
 
-    // If binPath contains a space (node + script fallback), split into
-    // separate ProgramArguments. Otherwise it's a direct symlink path.
-    const args = binPath.includes(" ")
-      ? [...binPath.split(" "), "--quiet"]
-      : [binPath, "--quiet"];
+function parseCronNumber(value: string, min: number, max: number, fieldName: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Invalid ${fieldName} field: ${value}`);
+  }
+  const parsed = Number(value);
+  if (parsed < min || parsed > max) {
+    throw new Error(`Invalid ${fieldName} value: ${value}`);
+  }
+  return parsed;
+}
 
-    // Create launchd plist
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+function expandCronField(
+  field: string,
+  min: number,
+  max: number,
+  fieldName: string,
+  normalize?: (value: number) => number
+): number[] | undefined {
+  if (field === "*") return undefined;
+
+  const values = new Set<number>();
+  for (const rawPart of field.split(",")) {
+    const part = rawPart.trim();
+    const [rangePart, stepPart] = part.split("/");
+    const step = stepPart === undefined
+      ? 1
+      : parseCronNumber(stepPart, 1, max - min + 1, fieldName);
+
+    let start: number;
+    let end: number;
+    if (rangePart === "*") {
+      start = min;
+      end = max;
+    } else if (rangePart.includes("-")) {
+      const [rawStart, rawEnd] = rangePart.split("-");
+      start = parseCronNumber(rawStart, min, max, fieldName);
+      end = parseCronNumber(rawEnd, min, max, fieldName);
+      if (start > end) {
+        throw new Error(`Invalid ${fieldName} range: ${rangePart}`);
+      }
+    } else {
+      start = parseCronNumber(rangePart, min, max, fieldName);
+      end = start;
+    }
+
+    for (let value = start; value <= end; value += step) {
+      values.add(normalize ? normalize(value) : value);
+    }
+  }
+
+  return [...values].sort((a, b) => a - b);
+}
+
+export function cronToLaunchdCalendarIntervals(cron: string): LaunchdCalendarInterval[] {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    throw new Error(`Expected a 5-field cron expression, got: ${cron}`);
+  }
+
+  const [minuteField, hourField, dayField, monthField, weekdayField] = parts;
+  const minutes = expandCronField(minuteField, 0, 59, "minute");
+  const hours = expandCronField(hourField, 0, 23, "hour");
+  const days = expandCronField(dayField, 1, 31, "day");
+  const months = expandCronField(monthField, 1, 12, "month");
+  const weekdays = expandCronField(
+    weekdayField,
+    0,
+    7,
+    "weekday",
+    (value) => (value === 7 ? 0 : value)
+  );
+
+  if (days && weekdays) {
+    throw new Error("macOS launchd cannot safely represent cron expressions that restrict both day-of-month and weekday");
+  }
+
+  const fields: Array<[keyof LaunchdCalendarInterval, number[] | undefined]> = [
+    ["Month", months],
+    ["Day", days],
+    ["Weekday", weekdays],
+    ["Hour", hours],
+    ["Minute", minutes],
+  ];
+
+  let intervals: LaunchdCalendarInterval[] = [{}];
+  for (const [key, values] of fields) {
+    if (!values) continue;
+    intervals = intervals.flatMap((interval) =>
+      values.map((value) => ({ ...interval, [key]: value }))
+    );
+  }
+
+  return intervals;
+}
+
+function renderLaunchdInterval(interval: LaunchdCalendarInterval, indent: string): string {
+  const keys: Array<keyof LaunchdCalendarInterval> = ["Month", "Day", "Weekday", "Hour", "Minute"];
+  const body = keys
+    .filter((key) => interval[key] !== undefined)
+    .map((key) => `${indent}    <key>${key}</key>\n${indent}    <integer>${interval[key]}</integer>`)
+    .join("\n");
+  return `${indent}<dict>${body ? `\n${body}\n${indent}` : ""}</dict>`;
+}
+
+function renderStartCalendarInterval(cron: string): string {
+  const intervals = cronToLaunchdCalendarIntervals(cron);
+  if (intervals.length === 1) {
+    return renderLaunchdInterval(intervals[0], "    ");
+  }
+
+  return [
+    "    <array>",
+    ...intervals.map((interval) => renderLaunchdInterval(interval, "        ")),
+    "    </array>",
+  ].join("\n");
+}
+
+function launchdPathEnv(): string {
+  const candidates = [
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+  ];
+  return [...new Set(candidates.filter(Boolean))].join(":");
+}
+
+function buildLaunchdPlist(cron: string, args: string[]): string {
+  const stdoutPath = path.join(os.homedir(), ".daily-report", "logs", "stdout.log");
+  const stderrPath = path.join(os.homedir(), ".daily-report", "logs", "stderr.log");
+  const pathEnv = launchdPathEnv();
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -111,40 +257,66 @@ export function scheduleOn(config: DailyReportConfig): void {
     <string>${PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-${args.map((a) => `        <string>${a}</string>`).join("\n")}
+${args.map((a) => `        <string>${xmlEscape(a)}</string>`).join("\n")}
     </array>
-    <key>StartCalendarInterval</key>
+    <key>EnvironmentVariables</key>
     <dict>
-        <key>Hour</key>
-        <integer>${cron.split(" ")[1]}</integer>
-        <key>Minute</key>
-        <integer>${cron.split(" ")[0]}</integer>${cron.split(" ")[4] !== "*" ? `
-        <key>Weekday</key>
-        <integer>${cron.split(" ")[4]}</integer>` : ""}
+        <key>PATH</key>
+        <string>${xmlEscape(pathEnv)}</string>
     </dict>
+    <key>StartCalendarInterval</key>
+${renderStartCalendarInterval(cron)}
     <key>StandardOutPath</key>
-    <string>${path.join(os.homedir(), ".daily-report", "logs", "stdout.log")}</string>
+    <string>${xmlEscape(stdoutPath)}</string>
     <key>StandardErrorPath</key>
-    <string>${path.join(os.homedir(), ".daily-report", "logs", "stderr.log")}</string>
+    <string>${xmlEscape(stderrPath)}</string>
     <key>RunAtLoad</key>
     <false/>
 </dict>
 </plist>`;
+}
 
-    // Ensure LaunchAgents directory exists
-    const launchDir = path.dirname(PLIST_PATH);
-    if (!fs.existsSync(launchDir)) {
-      fs.mkdirSync(launchDir, { recursive: true });
-    }
-
-    fs.writeFileSync(PLIST_PATH, plist, "utf-8");
-
+function unloadLaunchdJob(): void {
+  try {
+    execFileSync("launchctl", ["bootout", getLaunchctlDomain(), PLIST_PATH], { stdio: "pipe" });
+  } catch {
     try {
-      execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null || true`, { stdio: "pipe" });
-      execSync(`launchctl load "${PLIST_PATH}"`, { stdio: "pipe" });
+      execFileSync("launchctl", ["unload", PLIST_PATH], { stdio: "pipe" });
+    } catch {
+      // The job may not be loaded yet.
+    }
+  }
+}
+
+function loadLaunchdJob(): void {
+  try {
+    execFileSync("launchctl", ["bootstrap", getLaunchctlDomain(), PLIST_PATH], { stdio: "pipe" });
+  } catch {
+    execFileSync("launchctl", ["load", PLIST_PATH], { stdio: "pipe" });
+  }
+}
+
+/**
+ * Enable scheduled daily report on macOS via launchd.
+ */
+export function scheduleOn(config: DailyReportConfig): boolean {
+  const cron = config.schedule.cron;
+
+  if (process.platform === "darwin") {
+    try {
+      const args = [...resolveScheduledCommand(), "--quiet"];
+      const plist = buildLaunchdPlist(cron, args);
+      fs.mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
+      fs.mkdirSync(path.join(os.homedir(), ".daily-report", "logs"), { recursive: true });
+      fs.writeFileSync(PLIST_PATH, plist, "utf-8");
+      unloadLaunchdJob();
+      loadLaunchdJob();
       console.log("✅ 定时任务已启用 (launchd)");
     } catch (err: any) {
       console.error(`❌ 注册 launchd 任务失败: ${err.message}`);
+      config.schedule.enabled = false;
+      saveConfig(config);
+      return false;
     }
   } else {
     // Linux: crontab
@@ -157,8 +329,8 @@ ${args.map((a) => `        <string>${a}</string>`).join("\n")}
 
       // Remove any existing daily-report entries
       const lines = existing.split("\n").filter((l) => !l.includes("daily-report"));
-      const binPath = resolveBinPath();
-      lines.push(`${cron} ${binPath} --quiet # daily-report`);
+      const command = serializeShellCommand([...resolveScheduledCommand(), "--quiet"]);
+      lines.push(`${cron} ${command} # daily-report`);
 
       // Write new crontab
       const tmpFile = path.join(os.tmpdir(), "daily-report-crontab");
@@ -168,21 +340,25 @@ ${args.map((a) => `        <string>${a}</string>`).join("\n")}
       console.log("✅ 定时任务已启用 (crontab)");
     } catch (err: any) {
       console.error(`❌ 注册 crontab 任务失败: ${err.message}`);
+      config.schedule.enabled = false;
+      saveConfig(config);
+      return false;
     }
   }
 
   // Update config
   config.schedule.enabled = true;
   saveConfig(config);
+  return true;
 }
 
 /**
  * Disable scheduled daily report.
  */
-export function scheduleOff(config: DailyReportConfig): void {
+export function scheduleOff(config: DailyReportConfig): boolean {
   if (process.platform === "darwin") {
     try {
-      execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null || true`, { stdio: "pipe" });
+      unloadLaunchdJob();
       if (fs.existsSync(PLIST_PATH)) {
         fs.unlinkSync(PLIST_PATH);
       }
@@ -213,6 +389,7 @@ export function scheduleOff(config: DailyReportConfig): void {
 
   config.schedule.enabled = false;
   saveConfig(config);
+  return true;
 }
 
 /**
@@ -220,7 +397,13 @@ export function scheduleOff(config: DailyReportConfig): void {
  */
 export function isScheduled(): boolean {
   if (process.platform === "darwin") {
-    return fs.existsSync(PLIST_PATH);
+    if (!fs.existsSync(PLIST_PATH)) return false;
+    try {
+      execFileSync("launchctl", ["print", `${getLaunchctlDomain()}/${PLIST_LABEL}`], { stdio: "pipe" });
+      return true;
+    } catch {
+      return false;
+    }
   } else {
     try {
       const crontab = execSync("crontab -l 2>/dev/null || true", {
