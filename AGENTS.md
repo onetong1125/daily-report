@@ -16,6 +16,14 @@ This is a TypeScript CLI project for generating daily activity reports. Source f
 - `npm run test:coverage`: generate V8 coverage.
 - `npx vitest run tests/formatter.test.ts`: run a single test file.
 
+## Scheduler Bugfix Workflow
+
+For launchd/crontab scheduling bugs, validate the product path end to end. Do not treat a hand-edited `~/Library/LaunchAgents/com.daily-report.plist` as the fix. First reproduce from live state: `daily-report schedule status`, the generated plist/crontab, `launchctl print gui/$(id -u)/com.daily-report` on macOS, and `~/.daily-report/logs/{stdout,stderr}.log`. Then fix repository code and add focused scheduler tests.
+
+After code changes, build, package, and install globally with `npm run release` or equivalent `npm run build && npm pack && npm install -g <tarball>`. Confirm `daily-report --version` and installed files under the global npm prefix reflect the new package. Register only through the installed CLI, such as `daily-report schedule set "<cron>"` or `daily-report schedule on`; for verification, temporarily set the cron a few minutes in the future. Verify the actual run via plist/crontab contents, `launchctl print`, logs, exit code, and report output in `~/.daily-report/reports/`, then restore the user's intended schedule through `daily-report schedule set ...`.
+
+On macOS, launchd starts with a minimal environment. Scheduled jobs must not depend on an interactive shell `PATH` or the current repo checkout. The package-owned `bin/daily-report` launcher is the product entry point; generated launchd plists should execute the installed global `daily-report` command, not a workspace `dist/index.js` path.
+
 ## Coding Style & Naming Conventions
 
 Use strict TypeScript with CommonJS output and ES2022 targets. Follow the existing two-space indentation, double quotes, semicolon style, and named exports. Keep modules focused on one pipeline responsibility. Use kebab-case filenames such as `git-collector.ts`; use clear type names like `DailyReportConfig`. Prefer graceful degradation: unavailable sources should warn and skip, not crash the report. Keep CLI version behavior tied to installed package metadata.
