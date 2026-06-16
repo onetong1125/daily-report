@@ -11,18 +11,22 @@ const CODEX_SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
  */
 /**
  * Extract a human-readable conversation summary from user messages.
- * Takes the first few substantive messages as context excerpts.
+ * Returns null if no meaningful content can be extracted,
+ * signalling that this session should be skipped.
  */
-export function extractCodexSummary(messages: string[]): string {
-  if (messages.length === 0) return "无对话内容";
+export function extractCodexSummary(messages: string[]): string | null {
+  if (messages.length === 0) return null;
 
   const noisePatterns = [
     /^</,
     /^You are/,
     /^#!/,
+    /^#/,
     /^Base directory for this skill/i,
     /^\[Request interrupted/,
-    /^\[{/
+    /^\[{/,
+    /^EXTREMELY IMPORTANT/,
+    /^IMPORTANT:/,
   ];
   const isNoise = (m: string): boolean => noisePatterns.some((p) => p.test(m));
 
@@ -31,12 +35,7 @@ export function extractCodexSummary(messages: string[]): string {
     .filter((m) => m.length > 20)
     .filter((m) => !isNoise(m));
 
-  if (substantive.length === 0) {
-    const totalChars = messages.join("").length;
-    if (totalChars > 2000) return "有大量技术对话";
-    if (totalChars > 300) return "有简短对话";
-    return "几乎无对话内容";
-  }
+  if (substantive.length === 0) return null;
 
   const excerpts = substantive.slice(0, 5).map((m) => {
     const cleaned = m.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
@@ -113,7 +112,7 @@ function parseCodexSession(
       }
     }
 
-    if (!firstTimestamp) return null;
+    if (!firstTimestamp || !projectPath) return null;
 
     // Check if session is relevant to today using TWO signals:
     // 1. The first record's timestamp falls within today's range (new session)
@@ -136,6 +135,7 @@ function parseCodexSession(
     }
 
     const topicSummary = extractCodexSummary(userMessages);
+    if (!topicSummary) return null;
 
     return {
       source: "codex",

@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { extractCodexSummary } from "../src/collectors/codex-collector";
 
 describe("extractCodexSummary", () => {
-  it('returns "无对话内容" for empty messages array', () => {
-    expect(extractCodexSummary([])).toBe("无对话内容");
+  it("returns null for empty messages array", () => {
+    expect(extractCodexSummary([])).toBeNull();
   });
 
   it("joins up to 5 substantive messages with | separator", () => {
@@ -32,6 +32,30 @@ describe("extractCodexSummary", () => {
     expect(summary).not.toContain("system-reminder");
     expect(summary).not.toContain("AI assistant");
     expect(summary).not.toContain("Base directory");
+  });
+
+  it("filters out AGENTS.md instruction headings", () => {
+    const messages = [
+      "# AGENTS.md instructions for /Users/xuyitong/myprojects/daily-report\n<INSTRUCTIONS>\n# Repository Guidelines",
+      "现在这个注册定时任务还是有问题，这几天都没有生成日报",
+    ];
+    const summary = extractCodexSummary(messages);
+
+    expect(summary).toContain("注册定时任务");
+    expect(summary).not.toContain("AGENTS.md");
+    expect(summary).not.toContain("INSTRUCTIONS");
+  });
+
+  it("returns null when all messages are noise", () => {
+    const messages = [
+      "<system-reminder>Context info</system-reminder>",
+      "You are an AI assistant",
+      "# AGENTS.md instructions",
+      "IMPORTANT: follow these instructions",
+    ];
+    const summary = extractCodexSummary(messages);
+
+    expect(summary).toBeNull();
   });
 
   it("truncates long messages to 120 chars", () => {
