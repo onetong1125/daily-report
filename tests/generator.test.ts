@@ -335,6 +335,33 @@ describe("templateReport", () => {
     expect(report.projects.length).toBeGreaterThan(0);
     expect(report.tldr.some((t) => t.includes("myproject"))).toBe(true);
   });
+
+  it("summarizes project-bound AI conversations in fallback reports", () => {
+    const grouped: GroupedEvents = {
+      git_events: [
+        makeEvent({ repo: "/path/to/myproject", summary: "fix: scheduler bug" }),
+      ],
+      github_events: [],
+      claude_events: [],
+      codex_events: [
+        makeEvent({
+          source: "codex",
+          entity_type: "session",
+          repo: "/path/to/myproject",
+          summary: "排查 launchd 定时任务入口 | 检查全局安装路径 | 验证定时触发日志",
+          message_count: 27,
+        }),
+      ],
+    };
+
+    const report = templateReport(grouped, "2026-06-02");
+    const project = report.projects.find((p) => p.project === "myproject");
+
+    expect(project?.summary).toContain("Codex 协作 1 次");
+    expect(project?.summary).toContain("约 27 条消息");
+    expect(project?.summary).toContain("主要围绕");
+    expect(project?.summary).not.toBe("Codex 协作");
+  });
 });
 
 // ============================================================

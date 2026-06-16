@@ -63,6 +63,30 @@ function summarizeAIEventsByDirectory(events: SanitizedEvent[]): string {
   return lines.join("\n");
 }
 
+function summarizeAIEventsForProject(events: SanitizedEvent[]): string | null {
+  if (events.length === 0) return null;
+
+  const bySource = new Map<string, SanitizedEvent[]>();
+  for (const e of events) {
+    const source = e.source === "claude" ? "Claude Code" : "Codex";
+    if (!bySource.has(source)) bySource.set(source, []);
+    bySource.get(source)!.push(e);
+  }
+
+  const parts: string[] = [];
+  for (const [source, sourceEvents] of bySource) {
+    const totalMessages = sourceEvents.reduce((sum, e) => sum + (e.message_count || 0), 0);
+    const topics = sourceEvents
+      .map((e) => compactSummary(e.summary, 80))
+      .slice(0, 3)
+      .join("；");
+    const messagePart = totalMessages > 0 ? `，约 ${totalMessages} 条消息` : "";
+    parts.push(`${source} 协作 ${sourceEvents.length} 次${messagePart}，主要围绕 ${topics}`);
+  }
+
+  return parts.join("；");
+}
+
 /**
  * Build a prompt from grouped SanitizedEvent data.
  * Groups events by project, with unaffiliated AI conversations in "其他 AI 对话".
@@ -309,11 +333,12 @@ export function templateReport(
     if (events.github.length > 0) {
       parts.push(`GitHub: ${events.github.map((e) => `[${e.entity_type}] ${e.summary}`).join("; ")}`);
     }
-    if (events.claude.length > 0) {
-      parts.push(`Claude Code 协作`);
-    }
-    if (events.codex.length > 0) {
-      parts.push(`Codex 协作`);
+    const aiSummary = summarizeAIEventsForProject([
+      ...events.claude,
+      ...events.codex,
+    ]);
+    if (aiSummary) {
+      parts.push(aiSummary);
     }
 
     const summary = parts.join("。");
