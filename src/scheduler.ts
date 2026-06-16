@@ -21,57 +21,94 @@ export interface LaunchdCalendarInterval {
   Weekday?: number;
 }
 
+const WEEKDAYS: Record<string, string> = {
+  mon: "1", monday: "1",
+  tue: "2", tuesday: "2",
+  wed: "3", wednesday: "3",
+  thu: "4", thursday: "4",
+  fri: "5", friday: "5",
+  sat: "6", saturday: "6",
+  sun: "0", sunday: "0",
+};
+
+export const SCHEDULE_EXPRESSION_HELP = [
+  "支持的格式:",
+  "  daily-report schedule set \"21:00\"",
+  "  daily-report schedule set \"21:00 weekday\"",
+  "  daily-report schedule set \"21:00 weekend\"",
+  "  daily-report schedule set \"21:00 mon,fri\"",
+  "  daily-report schedule set \"00 21 * * *\"",
+  "提示: cron 表达式建议加引号，避免 shell 展开 *。",
+].join("\n");
+
+export function getScheduleTimeInputError(input: string): string | undefined {
+  try {
+    parseTimeExpression(`${input.trim()} *`);
+    return undefined;
+  } catch {
+    return "请输入 HH:mm 格式，例如 21:00（小时 0-23，分钟 0-59）";
+  }
+}
+
 /**
  * Convert friendly time format to cron expression.
  * Supported:
  *   "18:00"          → "0 18 * * *"
+ *   "18:00 *"        → "0 18 * * *"
  *   "18:00 weekday"  → "0 18 * * 1-5"
  *   "18:00 mon,fri"  → "0 18 * * 1,5"
  *   "0 18 * * 1-5"   → passed through
  */
 export function parseTimeExpression(input: string): string {
-  // If it looks like a cron expression already, return as-is
-  if (/^[\d*,/\-]+\s+[\d*,/\-]+\s+[\d*,/\-]+\s+[\d*,/\-]+\s+[\d*,/\-]+$/.test(input.trim())) {
-    return input.trim();
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error("Schedule expression cannot be empty");
   }
 
-  const parts = input.trim().split(/\s+/);
-  let hour = "18";
-  let minute = "0";
-  let dayOfWeek = "*";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 5) {
+    validateCronExpression(trimmed);
+    return trimmed;
+  }
 
-  // Parse time
+  if (parts.length > 5) {
+    throw new Error(`Expected a 5-field cron expression, got ${parts.length} fields. Quote cron expressions that contain *.`);
+  }
+
   const timeMatch = parts[0].match(/^(\d{1,2}):(\d{2})$/);
-  if (timeMatch) {
-    hour = timeMatch[1];
-    minute = timeMatch[2];
+  if (!timeMatch) {
+    throw new Error(`Invalid schedule expression: ${input}`);
   }
 
-  // Parse frequency
-  if (parts.length > 1) {
-    const freq = parts.slice(1).join(" ");
-    const weekdays: Record<string, string> = {
-      mon: "1", monday: "1",
-      tue: "2", tuesday: "2",
-      wed: "3", wednesday: "3",
-      thu: "4", thursday: "4",
-      fri: "5", friday: "5",
-      sat: "6", saturday: "6",
-      sun: "0", sunday: "0",
-    };
+  const hour = timeMatch[1];
+  const minute = timeMatch[2];
+  parseCronNumber(hour, 0, 23, "hour");
+  parseCronNumber(minute, 0, 59, "minute");
 
-    if (freq === "weekday" || freq === "weekdays") {
+  let dayOfWeek = "*";
+  if (parts.length > 1) {
+    const freq = parts.slice(1).join(" ").trim().toLowerCase();
+    if (freq === "*") {
+      dayOfWeek = "*";
+    } else if (freq === "weekday" || freq === "weekdays") {
       dayOfWeek = "1-5";
     } else if (freq === "weekend") {
       dayOfWeek = "0,6";
     } else {
-      // Parse individual days
-      const days = freq.split(",").map((d) => weekdays[d.trim().toLowerCase()] || d.trim());
+      const days = freq.split(",").map((day) => {
+        const normalized = WEEKDAYS[day.trim().toLowerCase()];
+        if (!normalized) {
+          throw new Error(`Invalid schedule frequency: ${day}`);
+        }
+        return normalized;
+      });
       dayOfWeek = days.join(",");
     }
   }
 
-  return `${minute} ${hour} * * ${dayOfWeek}`;
+  const cron = `${minute} ${hour} * * ${dayOfWeek}`;
+  validateCronExpression(cron);
+  return cron;
 }
 
 function xmlEscape(value: string): string {
@@ -137,7 +174,16 @@ function expandCronField(
   const values = new Set<number>();
   for (const rawPart of field.split(",")) {
     const part = rawPart.trim();
-    const [rangePart, stepPart] = part.split("/");
+    if (!part) {
+      throw new Error(`Invalid ${fieldName} field: ${field}`);
+    }
+
+    const stepParts = part.split("/");
+    if (stepParts.length > 2) {
+      throw new Error(`Invalid ${fieldName} field: ${field}`);
+    }
+
+    const [rangePart, stepPart] = stepParts;
     const step = stepPart === undefined
       ? 1
       : parseCronNumber(stepPart, 1, max - min + 1, fieldName);
@@ -148,7 +194,11 @@ function expandCronField(
       start = min;
       end = max;
     } else if (rangePart.includes("-")) {
-      const [rawStart, rawEnd] = rangePart.split("-");
+      const rangeParts = rangePart.split("-");
+      if (rangeParts.length !== 2) {
+        throw new Error(`Invalid ${fieldName} range: ${rangePart}`);
+      }
+      const [rawStart, rawEnd] = rangeParts;
       start = parseCronNumber(rawStart, min, max, fieldName);
       end = parseCronNumber(rawEnd, min, max, fieldName);
       if (start > end) {
@@ -165,6 +215,20 @@ function expandCronField(
   }
 
   return [...values].sort((a, b) => a - b);
+}
+
+export function validateCronExpression(cron: string): void {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    throw new Error(`Expected a 5-field cron expression, got: ${cron}`);
+  }
+
+  const [minuteField, hourField, dayField, monthField, weekdayField] = parts;
+  expandCronField(minuteField, 0, 59, "minute");
+  expandCronField(hourField, 0, 23, "hour");
+  expandCronField(dayField, 1, 31, "day");
+  expandCronField(monthField, 1, 12, "month");
+  expandCronField(weekdayField, 0, 7, "weekday");
 }
 
 export function cronToLaunchdCalendarIntervals(cron: string): LaunchdCalendarInterval[] {

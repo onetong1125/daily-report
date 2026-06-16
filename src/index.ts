@@ -12,11 +12,15 @@ import { mergeAndDedup } from "./merger";
 import { generateReport } from "./generator";
 import { formatTerminal, formatMarkdown, saveReport } from "./formatter";
 import { runSetup } from "./setup";
-import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled } from "./scheduler";
+import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
 import { DailyReportConfig, SanitizedEvent } from "./types";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+
+function printScheduleExpressionHelp(): void {
+  console.error(SCHEDULE_EXPRESSION_HELP);
+}
 
 function getVersion(): string {
   // 运行时读取 package.json：dev 模式读到项目实时版本，全局安装读到安装时的副本
@@ -313,12 +317,25 @@ configCmd
     const { default: inquirer } = await import("inquirer");
     const answers = await inquirer.prompt([
       { type: "confirm", name: "enabled", message: "启用定时任务？", default: config.schedule.enabled },
-      { type: "input", name: "time", message: "时间 (HH:mm):", default: "18:00", when: (a: any) => a.enabled },
+      {
+        type: "input",
+        name: "time",
+        message: "时间 (HH:mm):",
+        default: "18:00",
+        when: (a: any) => a.enabled,
+        validate: (input: string) => getScheduleTimeInputError(input) ?? true,
+      },
       { type: "list", name: "freq", message: "频率:", choices: ["每天", "工作日", "周末"], default: "工作日", when: (a: any) => a.enabled },
     ]);
     if (answers.enabled) {
       const freqMap: Record<string, string> = { "每天": "", "工作日": "weekday", "周末": "weekend" };
-      config.schedule.cron = parseTimeExpression(`${answers.time} ${freqMap[answers.freq] || ""}`);
+      try {
+        config.schedule.cron = parseTimeExpression(`${answers.time} ${freqMap[answers.freq] || ""}`);
+      } catch (err: any) {
+        console.error(`❌ 无效的定时设置: ${err.message}`);
+        process.exitCode = 1;
+        return;
+      }
     }
     config.schedule.enabled = answers.enabled;
     saveConfig(config);
@@ -337,11 +354,10 @@ scheduleCmd
   .description("启用定时任务")
   .action(() => {
     const config = loadConfig();
-    if (!config.schedule.enabled) {
-      config.schedule.enabled = true;
-      saveConfig(config);
+    config.schedule.enabled = true;
+    if (!scheduleOn(config)) {
+      process.exitCode = 1;
     }
-    scheduleOn(config);
   });
 
 scheduleCmd
@@ -353,16 +369,31 @@ scheduleCmd
   });
 
 scheduleCmd
-  .command("set <expression>")
+  .command("set <expression...>")
   .description("设置定时时间 (cron 或 HH:mm [weekday])")
-  .action((expression: string) => {
+  .action((expressionParts: string[]) => {
     const config = loadConfig();
-    const cron = parseTimeExpression(expression);
+    const previousSchedule = { ...config.schedule };
+    const expression = expressionParts.join(" ");
+    let cron: string;
+    try {
+      cron = parseTimeExpression(expression);
+    } catch (err: any) {
+      console.error(`❌ 无效的定时表达式: ${err.message}`);
+      printScheduleExpressionHelp();
+      process.exitCode = 1;
+      return;
+    }
+
     config.schedule.cron = cron;
     config.schedule.enabled = true;
-    saveConfig(config);
-    console.log(`✅ 定时已设置为: ${cron}`);
-    scheduleOn(config);
+    if (scheduleOn(config)) {
+      console.log(`✅ 定时已设置为: ${cron}`);
+    } else {
+      config.schedule = previousSchedule;
+      saveConfig(config);
+      process.exitCode = 1;
+    }
   });
 
 scheduleCmd
