@@ -7,6 +7,10 @@ describe("parseTimeExpression", () => {
     expect(parseTimeExpression("0 18 * * 1-5")).toBe("0 18 * * 1-5");
   });
 
+  it("passes through zero-padded cron expressions unchanged", () => {
+    expect(parseTimeExpression("00 21 * * *")).toBe("00 21 * * *");
+  });
+
   it("passes through cron with comma-separated days", () => {
     expect(parseTimeExpression("30 9 * * 1,3,5")).toBe("30 9 * * 1,3,5");
   });
@@ -52,10 +56,13 @@ describe("parseTimeExpression", () => {
     expect(parseTimeExpression("10:00 tue,thu")).toBe("00 10 * * 2,4");
   });
 
+  it("parses weekday names with spaces after commas", () => {
+    expect(parseTimeExpression("10:00 tue, thu")).toBe("00 10 * * 2,4");
+  });
+
   // --- Edge cases ---
-  it("defaults to daily when only a frequency word is given (no time part)", () => {
-    // Input without a time part — frequency is only parsed with >1 parts
-    expect(parseTimeExpression("weekday")).toBe("0 18 * * *");
+  it("rejects frequency-only input", () => {
+    expect(() => parseTimeExpression("weekday")).toThrow(/Invalid schedule expression/);
   });
 
   it("handles single-digit hours with leading zero minutes", () => {
@@ -64,6 +71,40 @@ describe("parseTimeExpression", () => {
 
   it("defaults to all days when no frequency is given", () => {
     expect(parseTimeExpression("12:00")).toBe("00 12 * * *");
+  });
+
+  it("parses setup daily frequency wildcard", () => {
+    expect(parseTimeExpression("21:00 *")).toBe("00 21 * * *");
+  });
+
+  it("rejects invalid friendly time values", () => {
+    expect(() => parseTimeExpression("24:00")).toThrow(/Invalid hour value/);
+    expect(() => parseTimeExpression("18:60")).toThrow(/Invalid minute value/);
+  });
+
+  it("rejects unknown friendly frequencies", () => {
+    expect(() => parseTimeExpression("18:00 nonsense")).toThrow(/Invalid schedule frequency/);
+  });
+
+  it("rejects malformed friendly expressions", () => {
+    expect(() => parseTimeExpression("18:00 weekday extra")).toThrow(/Invalid schedule frequency/);
+  });
+
+  it("rejects cron expressions with out-of-range values", () => {
+    expect(() => parseTimeExpression("99 18 * * *")).toThrow(/Invalid minute value/);
+    expect(() => parseTimeExpression("0 24 * * *")).toThrow(/Invalid hour value/);
+  });
+
+  it("rejects cron expressions with malformed fields", () => {
+    expect(() => parseTimeExpression("*/0 18 * * *")).toThrow(/Invalid minute value/);
+    expect(() => parseTimeExpression("0 18 * * mon")).toThrow(/Invalid weekday field/);
+    expect(() => parseTimeExpression("0 18 * * * *"))
+      .toThrow(/Expected a 5-field cron expression/);
+  });
+
+  it("explains shell-expanded cron expressions", () => {
+    expect(() => parseTimeExpression("00 21 file-a file-b file-c file-d"))
+      .toThrow(/Quote cron expressions that contain \*/);
   });
 });
 

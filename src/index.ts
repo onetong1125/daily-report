@@ -18,6 +18,20 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+const SCHEDULE_EXPRESSION_HELP = [
+  "支持的格式:",
+  "  daily-report schedule set \"21:00\"",
+  "  daily-report schedule set \"21:00 weekday\"",
+  "  daily-report schedule set \"21:00 weekend\"",
+  "  daily-report schedule set \"21:00 mon,fri\"",
+  "  daily-report schedule set \"00 21 * * *\"",
+  "提示: cron 表达式建议加引号，避免 shell 展开 *。",
+].join("\n");
+
+function printScheduleExpressionHelp(): void {
+  console.error(SCHEDULE_EXPRESSION_HELP);
+}
+
 function getVersion(): string {
   // 运行时读取 package.json：dev 模式读到项目实时版本，全局安装读到安装时的副本
   try {
@@ -337,11 +351,10 @@ scheduleCmd
   .description("启用定时任务")
   .action(() => {
     const config = loadConfig();
-    if (!config.schedule.enabled) {
-      config.schedule.enabled = true;
-      saveConfig(config);
+    config.schedule.enabled = true;
+    if (!scheduleOn(config)) {
+      process.exitCode = 1;
     }
-    scheduleOn(config);
   });
 
 scheduleCmd
@@ -353,16 +366,31 @@ scheduleCmd
   });
 
 scheduleCmd
-  .command("set <expression>")
+  .command("set <expression...>")
   .description("设置定时时间 (cron 或 HH:mm [weekday])")
-  .action((expression: string) => {
+  .action((expressionParts: string[]) => {
     const config = loadConfig();
-    const cron = parseTimeExpression(expression);
+    const previousSchedule = { ...config.schedule };
+    const expression = expressionParts.join(" ");
+    let cron: string;
+    try {
+      cron = parseTimeExpression(expression);
+    } catch (err: any) {
+      console.error(`❌ 无效的定时表达式: ${err.message}`);
+      printScheduleExpressionHelp();
+      process.exitCode = 1;
+      return;
+    }
+
     config.schedule.cron = cron;
     config.schedule.enabled = true;
-    saveConfig(config);
-    console.log(`✅ 定时已设置为: ${cron}`);
-    scheduleOn(config);
+    if (scheduleOn(config)) {
+      console.log(`✅ 定时已设置为: ${cron}`);
+    } else {
+      config.schedule = previousSchedule;
+      saveConfig(config);
+      process.exitCode = 1;
+    }
   });
 
 scheduleCmd
