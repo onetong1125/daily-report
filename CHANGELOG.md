@@ -8,7 +8,10 @@ running `npm run release`.
 
 ## Unreleased
 
-- No unreleased changes yet.
+### Changed
+
+- Ignored the `docs/` directory and stopped tracking existing local
+  documentation artifacts.
 
 ## 0.2.2 - 2026-06-16
 
