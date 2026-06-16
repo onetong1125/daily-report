@@ -36,6 +36,8 @@ Vitest is configured with Node environment and globals, so tests can use `descri
 
 Recent history uses Conventional Commit-style subjects such as `feat: 版本号改为运行时从 package.json 读取`, `docs: sync README with LLM retry feature`, and `test: add retryWithBackoff unit tests`. Keep subjects imperative and scoped (`feat`, `fix`, `test`, `docs`, `chore`). Pull requests should include a behavior summary, test results, linked issues or design docs when relevant, and screenshots or sample CLI output for formatting changes.
 
+When a change affects behavior, user-facing docs, release packaging, or versioned workflows, update `CHANGELOG.md` in the same collaboration pass. Keep new work under `Unreleased` until cutting a version, then move those entries under the matching `package.json` version and release date.
+
 ## Security & Configuration Tips
 
 Never commit API keys or generated private reports. Configuration belongs in `~/.daily-report/config.json`; prefer `${ENV_VAR}` placeholders for secrets. Preserve the privacy boundary: collectors should emit sanitized metadata only, and prompts must not include source code, raw conversation bodies, or secret values.

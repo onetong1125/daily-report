@@ -195,6 +195,7 @@ npm run release             # = build + pack + install -g
 - `npm run dev` 运行时从项目 `package.json` 实时读取版本号，改动立刻生效。
 - `daily-report` 全局命令读取的是发布时冻结的副本，与项目 `package.json` 脱钩。
 - `npm run release` 将当前版本编译打包安装到全局，之后改 `package.json` 不影响全局命令。
+- 发布前将本次更改记录到 [CHANGELOG.md](CHANGELOG.md)，并把 `Unreleased` 内容移动到对应版本号下。
 
 ## 许可证
 
