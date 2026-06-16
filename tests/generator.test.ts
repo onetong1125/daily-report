@@ -275,6 +275,41 @@ describe("templateReport", () => {
     // Claude event with no matching git project goes to other_ai
     expect(report.other_ai).not.toBe("无");
     expect(report.other_ai).toContain("Claude");
+    expect(report.other_ai).toContain("project");
+    expect(report.other_ai).toContain("主要围绕");
+  });
+
+  it("summarizes other AI conversations by directory instead of listing raw excerpts", () => {
+    const grouped: GroupedEvents = {
+      git_events: [],
+      github_events: [],
+      claude_events: [
+        makeEvent({
+          source: "claude",
+          entity_type: "session",
+          repo: "/path/to/study",
+          summary: "学习 ArrayBlockingQueue 源码 | 讨论 awaitNanos 超时等待 | 分析循环数组",
+          message_count: 12,
+        }),
+      ],
+      codex_events: [
+        makeEvent({
+          source: "codex",
+          entity_type: "session",
+          repo: "/path/to/study",
+          summary: "设计 DelayQueue 学习路径 | 对比 PriorityQueue 实现",
+          message_count: 8,
+        }),
+      ],
+    };
+
+    const report = templateReport(grouped, "2026-06-02");
+
+    expect(report.other_ai).toContain("study: Claude/Codex 中有 2 次对话");
+    expect(report.other_ai).toContain("约 20 条消息");
+    expect(report.other_ai).toContain("主要围绕");
+    expect(report.other_ai).not.toContain("[Claude]");
+    expect(report.other_ai).not.toContain("[Codex]");
   });
 
   it("handles Claude events linked to known projects", () => {
@@ -299,6 +334,33 @@ describe("templateReport", () => {
     // Should appear in projects section, not in other_ai
     expect(report.projects.length).toBeGreaterThan(0);
     expect(report.tldr.some((t) => t.includes("myproject"))).toBe(true);
+  });
+
+  it("summarizes project-bound AI conversations in fallback reports", () => {
+    const grouped: GroupedEvents = {
+      git_events: [
+        makeEvent({ repo: "/path/to/myproject", summary: "fix: scheduler bug" }),
+      ],
+      github_events: [],
+      claude_events: [],
+      codex_events: [
+        makeEvent({
+          source: "codex",
+          entity_type: "session",
+          repo: "/path/to/myproject",
+          summary: "排查 launchd 定时任务入口 | 检查全局安装路径 | 验证定时触发日志",
+          message_count: 27,
+        }),
+      ],
+    };
+
+    const report = templateReport(grouped, "2026-06-02");
+    const project = report.projects.find((p) => p.project === "myproject");
+
+    expect(project?.summary).toContain("Codex 协作 1 次");
+    expect(project?.summary).toContain("约 27 条消息");
+    expect(project?.summary).toContain("主要围绕");
+    expect(project?.summary).not.toBe("Codex 协作");
   });
 });
 
@@ -371,6 +433,28 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("TL;DR");
     expect(prompt).toContain("PROJECTS:");
     expect(prompt).toContain("TOMORROW");
+  });
+
+  it("instructs the LLM to summarize OTHER_AI by directory", () => {
+    const grouped: GroupedEvents = {
+      git_events: [],
+      github_events: [],
+      claude_events: [
+        makeEvent({
+          source: "claude",
+          entity_type: "session",
+          repo: "/path/to/study",
+          summary: "学习并发集合源码",
+        }),
+      ],
+      codex_events: [],
+    };
+
+    const prompt = buildPrompt(grouped, "2026-06-02");
+
+    expect(prompt).toContain("OTHER_AI 必须按目录/项目总结");
+    expect(prompt).toContain("不要逐条复述对话摘录");
+    expect(prompt).toContain("- <目录名>:");
   });
 });
 

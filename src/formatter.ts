@@ -89,11 +89,13 @@ export function formatMarkdown(
   lines.push("");
 
   // Projects
-  if (report.projects.length > 0 && grouped) {
+  if (report.projects.length > 0) {
     // Build a lookup for detailed events per project
     const knownProjects = new Set<string>();
-    for (const e of grouped.git_events) knownProjects.add(projectName(e.repo));
-    for (const e of grouped.github_events) knownProjects.add(projectName(e.repo));
+    if (grouped) {
+      for (const e of grouped.git_events) knownProjects.add(projectName(e.repo));
+      for (const e of grouped.github_events) knownProjects.add(projectName(e.repo));
+    }
 
     for (const proj of report.projects) {
       lines.push("---");
@@ -104,6 +106,8 @@ export function formatMarkdown(
       // LLM summary
       lines.push(proj.summary);
       lines.push("");
+
+      if (!grouped) continue;
 
       // Detailed git commits
       const gitEvents = grouped.git_events.filter(
@@ -132,34 +136,8 @@ export function formatMarkdown(
         lines.push("");
       }
 
-      // Claude conversations for this project
-      const clEvents: SanitizedEvent[] = [];
-      for (const e of grouped.claude_events) {
-        const name = projectName(e.repo);
-        if (name === proj.project || knownProjects.has(name) === false) {
-          // Only include if exact match (will be handled by classify logic)
-          if (name === proj.project) clEvents.push(e);
-        }
-      }
-      if (clEvents.length > 0) {
-        lines.push("### Claude Code 对话");
-        for (const e of clEvents) {
-          lines.push(`- ${e.summary}`);
-        }
-        lines.push("");
-      }
-
-      // Codex conversations for this project
-      const cxEvents = grouped.codex_events.filter(
-        (e) => projectName(e.repo) === proj.project
-      );
-      if (cxEvents.length > 0) {
-        lines.push("### Codex 对话");
-        for (const e of cxEvents) {
-          lines.push(`- ${e.summary}`);
-        }
-        lines.push("");
-      }
+      // AI conversations are already summarized by the LLM in the project
+      // summary and OTHER_AI sections; do not append raw collector excerpts.
     }
   }
 

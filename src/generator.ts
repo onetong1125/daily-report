@@ -31,6 +31,62 @@ function classifyEvent(
   return null;
 }
 
+function compactSummary(summary: string, maxLen = 180): string {
+  const cleaned = summary.replace(/\s+/g, " ").trim();
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen - 3) + "..." : cleaned;
+}
+
+function summarizeAIEventsByDirectory(events: SanitizedEvent[]): string {
+  if (events.length === 0) return "无";
+
+  const byDir = new Map<string, SanitizedEvent[]>();
+  for (const e of events) {
+    const name = projectName(e);
+    if (!byDir.has(name)) byDir.set(name, []);
+    byDir.get(name)!.push(e);
+  }
+
+  const lines: string[] = [];
+  for (const [dir, dirEvents] of byDir) {
+    const sources = Array.from(new Set(
+      dirEvents.map((e) => e.source === "claude" ? "Claude" : "Codex")
+    )).join("/");
+    const totalMessages = dirEvents.reduce((sum, e) => sum + (e.message_count || 0), 0);
+    const topics = dirEvents
+      .map((e) => compactSummary(e.summary, 80))
+      .slice(0, 3)
+      .join("；");
+    const messagePart = totalMessages > 0 ? `，约 ${totalMessages} 条消息` : "";
+    lines.push(`- ${dir}: ${sources} 中有 ${dirEvents.length} 次对话${messagePart}，主要围绕 ${topics}`);
+  }
+
+  return lines.join("\n");
+}
+
+function summarizeAIEventsForProject(events: SanitizedEvent[]): string | null {
+  if (events.length === 0) return null;
+
+  const bySource = new Map<string, SanitizedEvent[]>();
+  for (const e of events) {
+    const source = e.source === "claude" ? "Claude Code" : "Codex";
+    if (!bySource.has(source)) bySource.set(source, []);
+    bySource.get(source)!.push(e);
+  }
+
+  const parts: string[] = [];
+  for (const [source, sourceEvents] of bySource) {
+    const totalMessages = sourceEvents.reduce((sum, e) => sum + (e.message_count || 0), 0);
+    const topics = sourceEvents
+      .map((e) => compactSummary(e.summary, 80))
+      .slice(0, 3)
+      .join("；");
+    const messagePart = totalMessages > 0 ? `，约 ${totalMessages} 条消息` : "";
+    parts.push(`${source} 协作 ${sourceEvents.length} 次${messagePart}，主要围绕 ${topics}`);
+  }
+
+  return parts.join("；");
+}
+
 /**
  * Build a prompt from grouped SanitizedEvent data.
  * Groups events by project, with unaffiliated AI conversations in "其他 AI 对话".
@@ -142,6 +198,7 @@ export function buildPrompt(
 
   sections.push("");
   sections.push("请输出以下格式的日报：");
+  sections.push("要求：OTHER_AI 必须按目录/项目总结不绑定特定项目的 AI 对话主题，不要逐条复述对话摘录。每个目录用一句话概括主要内容和可能的后续方向。");
   sections.push("---");
   sections.push("TL;DR:");
   sections.push("- (今天做的最重要的 2-4 件事，以项目为维度)");
@@ -154,7 +211,7 @@ export function buildPrompt(
   sections.push("<综合总结>");
   sections.push("");
   sections.push("OTHER_AI:");
-  sections.push("<不绑定特定项目的 AI 对话话题总结，并提出一些后续发展 idea>");
+  sections.push("- <目录名>: <该目录下 AI 对话的主题总结，并提出一个后续发展 idea>");
   sections.push("");
   sections.push("TOMORROW:");
   sections.push("- (基于今天未完成工作的具体明日建议，不要写「继续今天的工作」这种空话)");
@@ -231,7 +288,7 @@ export function templateReport(
   const tldr: string[] = [];
   const projects: ProjectSummary[] = [];
   const tomorrow: string[] = [];
-  const otherAIParts: string[] = [];
+  const otherAIEvents: SanitizedEvent[] = [];
 
   // Determine known project names
   const knownProjects = new Set<string>();
@@ -258,12 +315,12 @@ export function templateReport(
   for (const e of grouped.claude_events) {
     const proj = classifyEvent(e, knownProjects);
     if (proj) ensure(proj).claude.push(e);
-    else otherAIParts.push(`[Claude] ${projectName(e)}: ${e.summary}`);
+    else otherAIEvents.push(e);
   }
   for (const e of grouped.codex_events) {
     const proj = classifyEvent(e, knownProjects);
     if (proj) ensure(proj).codex.push(e);
-    else otherAIParts.push(`[Codex] ${projectName(e)}: ${e.summary}`);
+    else otherAIEvents.push(e);
   }
 
   // Build project summaries
@@ -276,11 +333,12 @@ export function templateReport(
     if (events.github.length > 0) {
       parts.push(`GitHub: ${events.github.map((e) => `[${e.entity_type}] ${e.summary}`).join("; ")}`);
     }
-    if (events.claude.length > 0) {
-      parts.push(`Claude Code 协作`);
-    }
-    if (events.codex.length > 0) {
-      parts.push(`Codex 协作`);
+    const aiSummary = summarizeAIEventsForProject([
+      ...events.claude,
+      ...events.codex,
+    ]);
+    if (aiSummary) {
+      parts.push(aiSummary);
     }
 
     const summary = parts.join("。");
@@ -289,7 +347,7 @@ export function templateReport(
     tldr.push(`${proj}: ${summary}`);
   }
 
-  const otherAI = otherAIParts.length > 0 ? otherAIParts.join("\n") : "无";
+  const otherAI = summarizeAIEventsByDirectory(otherAIEvents);
 
   // Tomorrow suggestions
   const wipCommits = grouped.git_events.filter((e) =>
