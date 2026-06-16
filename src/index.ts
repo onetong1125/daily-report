@@ -12,21 +12,11 @@ import { mergeAndDedup } from "./merger";
 import { generateReport } from "./generator";
 import { formatTerminal, formatMarkdown, saveReport } from "./formatter";
 import { runSetup } from "./setup";
-import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled } from "./scheduler";
+import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
 import { DailyReportConfig, SanitizedEvent } from "./types";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-
-const SCHEDULE_EXPRESSION_HELP = [
-  "支持的格式:",
-  "  daily-report schedule set \"21:00\"",
-  "  daily-report schedule set \"21:00 weekday\"",
-  "  daily-report schedule set \"21:00 weekend\"",
-  "  daily-report schedule set \"21:00 mon,fri\"",
-  "  daily-report schedule set \"00 21 * * *\"",
-  "提示: cron 表达式建议加引号，避免 shell 展开 *。",
-].join("\n");
 
 function printScheduleExpressionHelp(): void {
   console.error(SCHEDULE_EXPRESSION_HELP);
@@ -327,12 +317,25 @@ configCmd
     const { default: inquirer } = await import("inquirer");
     const answers = await inquirer.prompt([
       { type: "confirm", name: "enabled", message: "启用定时任务？", default: config.schedule.enabled },
-      { type: "input", name: "time", message: "时间 (HH:mm):", default: "18:00", when: (a: any) => a.enabled },
+      {
+        type: "input",
+        name: "time",
+        message: "时间 (HH:mm):",
+        default: "18:00",
+        when: (a: any) => a.enabled,
+        validate: (input: string) => getScheduleTimeInputError(input) ?? true,
+      },
       { type: "list", name: "freq", message: "频率:", choices: ["每天", "工作日", "周末"], default: "工作日", when: (a: any) => a.enabled },
     ]);
     if (answers.enabled) {
       const freqMap: Record<string, string> = { "每天": "", "工作日": "weekday", "周末": "weekend" };
-      config.schedule.cron = parseTimeExpression(`${answers.time} ${freqMap[answers.freq] || ""}`);
+      try {
+        config.schedule.cron = parseTimeExpression(`${answers.time} ${freqMap[answers.freq] || ""}`);
+      } catch (err: any) {
+        console.error(`❌ 无效的定时设置: ${err.message}`);
+        process.exitCode = 1;
+        return;
+      }
     }
     config.schedule.enabled = answers.enabled;
     saveConfig(config);

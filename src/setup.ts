@@ -5,7 +5,7 @@ import * as path from "path";
 import * as os from "os";
 import { DailyReportConfig } from "./types";
 import { loadConfig, saveConfig } from "./config";
-import { parseTimeExpression, scheduleOn } from "./scheduler";
+import { getScheduleTimeInputError, parseTimeExpression, scheduleOn } from "./scheduler";
 
 /**
  * Scan for Git repositories under common parent directories.
@@ -165,6 +165,7 @@ export async function runSetup(): Promise<void> {
       message: "什么时间生成？(HH:mm):",
       default: "18:00",
       when: (answers) => answers.enabled,
+      validate: (input: string) => getScheduleTimeInputError(input) ?? true,
     },
     {
       type: "list",
@@ -181,10 +182,17 @@ export async function runSetup(): Promise<void> {
     },
   ]);
 
-  // Convert to cron
-  const cronExpr = scheduleAnswer.enabled
-    ? parseTimeExpression(`${scheduleAnswer.time} ${scheduleAnswer.frequency}`)
-    : "0 18 * * 1-5";
+  let cronExpr = "0 18 * * 1-5";
+  if (scheduleAnswer.enabled) {
+    try {
+      cronExpr = parseTimeExpression(`${scheduleAnswer.time} ${scheduleAnswer.frequency}`);
+    } catch (err: any) {
+      console.error(`❌ 无效的定时设置: ${err.message}`);
+      console.error("请重新运行 daily-report setup，并输入 HH:mm 格式的时间，例如 21:00。");
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   // Step 4: Review and save
   console.log("\n▸ 步骤 4/4: 确认配置\n");
@@ -240,7 +248,10 @@ export async function runSetup(): Promise<void> {
 
   // Activate scheduling if enabled (setup wizard was missing this step)
   if (config.schedule.enabled) {
-    scheduleOn(config);
+    if (!scheduleOn(config)) {
+      process.exitCode = 1;
+      return;
+    }
     console.log(`\n⏰ 定时任务已注册: ${config.schedule.cron}`);
   }
 

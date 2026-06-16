@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cronToLaunchdCalendarIntervals, parseTimeExpression } from "../src/scheduler";
+import { cronToLaunchdCalendarIntervals, getScheduleTimeInputError, parseTimeExpression } from "../src/scheduler";
 
 describe("parseTimeExpression", () => {
   // --- Cron pass-through ---
@@ -150,5 +150,19 @@ describe("cronToLaunchdCalendarIntervals", () => {
     expect(() => cronToLaunchdCalendarIntervals("0 18 1 * 1")).toThrow(
       /day-of-month and weekday/
     );
+  });
+});
+
+describe("getScheduleTimeInputError", () => {
+  it("accepts valid HH:mm input", () => {
+    expect(getScheduleTimeInputError("21:00")).toBeUndefined();
+  });
+
+  it("rejects invalid setup time input with a user-facing hint", () => {
+    expect(getScheduleTimeInputError("?")).toMatch(/请输入 HH:mm 格式/);
+  });
+
+  it("rejects out-of-range setup time input", () => {
+    expect(getScheduleTimeInputError("24:00")).toMatch(/请输入 HH:mm 格式/);
   });
 });

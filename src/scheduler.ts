@@ -31,6 +31,25 @@ const WEEKDAYS: Record<string, string> = {
   sun: "0", sunday: "0",
 };
 
+export const SCHEDULE_EXPRESSION_HELP = [
+  "支持的格式:",
+  "  daily-report schedule set \"21:00\"",
+  "  daily-report schedule set \"21:00 weekday\"",
+  "  daily-report schedule set \"21:00 weekend\"",
+  "  daily-report schedule set \"21:00 mon,fri\"",
+  "  daily-report schedule set \"00 21 * * *\"",
+  "提示: cron 表达式建议加引号，避免 shell 展开 *。",
+].join("\n");
+
+export function getScheduleTimeInputError(input: string): string | undefined {
+  try {
+    parseTimeExpression(`${input.trim()} *`);
+    return undefined;
+  } catch {
+    return "请输入 HH:mm 格式，例如 21:00（小时 0-23，分钟 0-59）";
+  }
+}
+
 /**
  * Convert friendly time format to cron expression.
  * Supported:

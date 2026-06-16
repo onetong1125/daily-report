@@ -1,6 +1,6 @@
 {
   "name": "daily-report",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "自动日报工具：聚合 Git、GitHub、Claude Code、Codex CLI 的每日活动，生成日报和明日行动建议",
   "main": "dist/index.js",
   "bin": {
