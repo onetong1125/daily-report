@@ -10,6 +10,7 @@ running `npm run release`.
 
 ### Changed
 
+- Added the MIT license text to the repository.
 - Ignored the `docs/` directory and stopped tracking existing local
   documentation artifacts.
 
