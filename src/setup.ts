@@ -47,18 +47,20 @@ function scanGitRepos(): string[] {
   return found.sort();
 }
 
-function parseCustomRepoPaths(input: string): string[] {
-  const rawPaths = input.trim().length === 0
-    ? [""]
-    : input.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
-  return rawPaths.map(normalizeRepoPath);
+export function parseRawRepoInputs(input: string): string[] {
+  if (input.trim().length === 0) {
+    return [""];
+  }
+
+  return input.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
-function validateCustomRepoPaths(input: string): true | string {
-  const rawPaths = input.trim().length === 0
-    ? [""]
-    : input.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
+export function parseCustomRepoPaths(input: string): string[] {
+  return parseRawRepoInputs(input).map(normalizeRepoPath);
+}
 
+export function validateCustomRepoPaths(input: string): true | string {
+  const rawPaths = parseRawRepoInputs(input);
   if (rawPaths.length === 0) {
     return "路径不能为空";
   }

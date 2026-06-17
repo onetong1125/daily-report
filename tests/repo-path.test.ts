@@ -2,7 +2,14 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { execFileSync } from "child_process";
 import { getRepoPathInputError, hasRepoPath, normalizeRepoPath, uniqueRepoPaths } from "../src/repo-path";
+
+function createGitRepo(name: string): string {
+  const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), `daily-report-${name}-`));
+  execFileSync("git", ["init"], { cwd: repoPath, stdio: "ignore" });
+  return fs.realpathSync.native(repoPath);
+}
 
 describe("normalizeRepoPath", () => {
   it("resolves blank input to the current directory", () => {
@@ -16,6 +23,22 @@ describe("normalizeRepoPath", () => {
 
   it("expands home-directory paths", () => {
     expect(normalizeRepoPath("~/test-repo")).toBe(path.join(os.homedir(), "test-repo"));
+  });
+
+  it("normalizes repository subdirectories to the Git top-level path", () => {
+    const repoPath = createGitRepo("subdir");
+    const subdir = path.join(repoPath, "nested");
+    fs.mkdirSync(subdir);
+
+    expect(normalizeRepoPath(subdir)).toBe(repoPath);
+  });
+
+  it("normalizes symlinked repository paths to the real top-level path", () => {
+    const repoPath = createGitRepo("symlink");
+    const symlinkPath = path.join(os.tmpdir(), `daily-report-link-${Date.now()}`);
+    fs.symlinkSync(repoPath, symlinkPath);
+
+    expect(normalizeRepoPath(symlinkPath)).toBe(repoPath);
   });
 });
 
@@ -36,8 +59,7 @@ describe("getRepoPathInputError", () => {
   });
 
   it("accepts paths with a .git directory", () => {
-    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "daily-report-repo-"));
-    fs.mkdirSync(path.join(repoDir, ".git"));
+    const repoDir = createGitRepo("repo");
 
     expect(getRepoPathInputError(` ${repoDir} `)).toBeUndefined();
   });
