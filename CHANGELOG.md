@@ -13,6 +13,14 @@ running `npm run release`.
 - Added the MIT license text to the repository.
 - Ignored the `docs/` directory and stopped tracking existing local
   documentation artifacts.
+- Normalized repository paths added with `daily-report config repos`.
+- Treated empty repository input as the current directory in
+  `daily-report config repos`.
+
+### Fixed
+
+- Rejected invalid repository paths in `daily-report config repos`.
+- Prevented duplicate repository entries in `daily-report config repos`.
 
 ## 0.2.2 - 2026-06-16
 
