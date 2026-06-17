@@ -11,12 +11,11 @@ import { sanitizeEvents } from "./sanitizer";
 import { mergeAndDedup } from "./merger";
 import { generateReport } from "./generator";
 import { formatTerminal, formatMarkdown, saveReport } from "./formatter";
-import { runSetup } from "./setup";
+import { runSetup, selectTrackedRepos } from "./setup";
 import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
 import { DailyReportConfig, SanitizedEvent } from "./types";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 
 function printScheduleExpressionHelp(): void {
   console.error(SCHEDULE_EXPRESSION_HELP);
@@ -229,53 +228,9 @@ configCmd
   .description("管理追踪仓库")
   .action(async () => {
     const config = loadConfig();
-    const { default: inquirer } = await import("inquirer");
-    const answer = await inquirer.prompt<{ action: string }>([
-      {
-        type: "list",
-        name: "action",
-        message: "管理追踪仓库:",
-        choices: [
-          { name: "查看当前仓库列表", value: "list" },
-          { name: "添加仓库", value: "add" },
-          { name: "删除仓库", value: "remove" },
-        ],
-      },
-    ]);
-
-    if (answer.action === "list") {
-      console.log("\n当前追踪仓库:");
-      config.repos.forEach((r, i) => console.log(`  ${i + 1}. ${r}`));
-      console.log("");
-    } else if (answer.action === "add") {
-      const addAnswer = await inquirer.prompt<{ path: string }>([
-        { type: "input", name: "path", message: "仓库路径:" },
-      ]);
-      const p = addAnswer.path.replace(/^~/, os.homedir());
-      if (fs.existsSync(path.join(p, ".git"))) {
-        config.repos.push(p);
-        saveConfig(config);
-        console.log(`✅ 已添加: ${p}`);
-      } else {
-        console.log(`❌ 不是有效的 Git 仓库: ${p}`);
-      }
-    } else if (answer.action === "remove") {
-      if (config.repos.length === 0) {
-        console.log("没有可删除的仓库。");
-        return;
-      }
-      const removeAnswer = await inquirer.prompt<{ repos: string[] }>([
-        {
-          type: "checkbox",
-          name: "repos",
-          message: "选择要删除的仓库:",
-          choices: config.repos.map((r) => ({ name: r, value: r })),
-        },
-      ]);
-      config.repos = config.repos.filter((r) => !removeAnswer.repos.includes(r));
-      saveConfig(config);
-      console.log(`✅ 已删除 ${removeAnswer.repos.length} 个仓库`);
-    }
+    config.repos = await selectTrackedRepos(config.repos);
+    saveConfig(config);
+    console.log(`✅ 追踪仓库已更新: ${config.repos.length} 个`);
   });
 
 configCmd
