@@ -16,6 +16,7 @@ running `npm run release`.
 - Normalized repository paths added with `daily-report config repos`.
 - Treated empty repository input as the current directory in
   `daily-report config repos`.
+- Reused the setup repository selector in `daily-report config repos`.
 
 ### Fixed
 

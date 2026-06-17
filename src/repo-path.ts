@@ -21,3 +21,14 @@ export function hasRepoPath(repos: string[], repoPath: string): boolean {
   const normalizedRepoPath = normalizeRepoPath(repoPath);
   return repos.some((existing) => normalizeRepoPath(existing) === normalizedRepoPath);
 }
+
+export function uniqueRepoPaths(repos: string[]): string[] {
+  const uniqueRepos: string[] = [];
+  for (const repo of repos) {
+    const normalizedRepo = normalizeRepoPath(repo);
+    if (!uniqueRepos.includes(normalizedRepo)) {
+      uniqueRepos.push(normalizedRepo);
+    }
+  }
+  return uniqueRepos;
+}

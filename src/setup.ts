@@ -6,6 +6,7 @@ import * as os from "os";
 import { DailyReportConfig } from "./types";
 import { loadConfig, saveConfig } from "./config";
 import { getScheduleTimeInputError, parseTimeExpression, scheduleOn } from "./scheduler";
+import { getRepoPathInputError, hasRepoPath, normalizeRepoPath, uniqueRepoPaths } from "./repo-path";
 
 /**
  * Scan for Git repositories under common parent directories.
@@ -46,17 +47,36 @@ function scanGitRepos(): string[] {
   return found.sort();
 }
 
-/**
- * Interactive setup wizard (spec §3.3).
- */
-export async function runSetup(): Promise<void> {
-  console.log("\n📋 欢迎使用日报工具！让我们完成初始化...\n");
+function parseCustomRepoPaths(input: string): string[] {
+  const rawPaths = input.trim().length === 0
+    ? [""]
+    : input.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
+  return rawPaths.map(normalizeRepoPath);
+}
 
-  const existingConfig = loadConfig();
+function validateCustomRepoPaths(input: string): true | string {
+  const rawPaths = input.trim().length === 0
+    ? [""]
+    : input.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
 
-  // Step 1: Repos
-  console.log("▸ 步骤 1/4: 配置追踪仓库\n");
+  if (rawPaths.length === 0) {
+    return "路径不能为空";
+  }
+
+  for (const rawPath of rawPaths) {
+    const inputError = getRepoPathInputError(rawPath);
+    if (inputError) {
+      return `${inputError}: ${normalizeRepoPath(rawPath)}`;
+    }
+  }
+
+  return true;
+}
+
+export async function selectTrackedRepos(existingRepos: string[]): Promise<string[]> {
   const foundRepos = scanGitRepos();
+  const normalizedExistingRepos = uniqueRepoPaths(existingRepos);
+  const candidateRepos = uniqueRepoPaths([...normalizedExistingRepos, ...foundRepos]);
 
   const repoAnswer = await inquirer.prompt<{ repos: string[] }>([
     {
@@ -64,10 +84,10 @@ export async function runSetup(): Promise<void> {
       name: "repos",
       message: "请选择要追踪的 Git 仓库（空格选中，回车确认）:",
       choices: [
-        ...foundRepos.map((r) => ({
+        ...candidateRepos.map((r) => ({
           name: r.replace(os.homedir(), "~"),
           value: r,
-          checked: existingConfig.repos.includes(r),
+          checked: hasRepoPath(normalizedExistingRepos, r),
         })),
         new inquirer.Separator(),
         { name: "手动输入路径", value: "__custom__" },
@@ -84,16 +104,27 @@ export async function runSetup(): Promise<void> {
       {
         type: "input",
         name: "path",
-        message: "请输入仓库路径（多个用逗号分隔）:",
-        validate: (input: string) => input.trim().length > 0 || "路径不能为空",
+        message: "请输入仓库路径（多个用逗号分隔，留空表示当前目录）:",
+        validate: validateCustomRepoPaths,
       },
     ]);
-    const customRepos = customAnswer.path
-      .split(",")
-      .map((p) => p.trim().replace(/^~/, os.homedir()))
-      .filter((p) => p.length > 0);
-    repos = [...repos, ...customRepos];
+    repos = [...repos, ...parseCustomRepoPaths(customAnswer.path)];
   }
+
+  return uniqueRepoPaths(repos);
+}
+
+/**
+ * Interactive setup wizard (spec §3.3).
+ */
+export async function runSetup(): Promise<void> {
+  console.log("\n📋 欢迎使用日报工具！让我们完成初始化...\n");
+
+  const existingConfig = loadConfig();
+
+  // Step 1: Repos
+  console.log("▸ 步骤 1/4: 配置追踪仓库\n");
+  const repos = await selectTrackedRepos(existingConfig.repos);
 
   // Step 2: LLM Config
   console.log("\n▸ 步骤 2/4: 配置 AI 模型\n");

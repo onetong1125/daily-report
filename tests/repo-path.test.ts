@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { getRepoPathInputError, hasRepoPath, normalizeRepoPath } from "../src/repo-path";
+import { getRepoPathInputError, hasRepoPath, normalizeRepoPath, uniqueRepoPaths } from "../src/repo-path";
 
 describe("normalizeRepoPath", () => {
   it("resolves blank input to the current directory", () => {
@@ -54,5 +54,11 @@ describe("hasRepoPath", () => {
     const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), "daily-report-repo-"));
 
     expect(hasRepoPath([repoPath], process.cwd())).toBe(false);
+  });
+});
+
+describe("uniqueRepoPaths", () => {
+  it("deduplicates repositories after normalizing paths", () => {
+    expect(uniqueRepoPaths([process.cwd(), "."])).toEqual([process.cwd()]);
   });
 });
