@@ -8,6 +8,11 @@ running `npm run release`.
 
 ## Unreleased
 
+### Fixed
+
+- Kept LLM notice text and the saved report path visible when running
+  `daily-report --quiet`.
+
 ### Changed
 
 - Added the MIT license text to the repository.

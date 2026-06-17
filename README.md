@@ -61,7 +61,7 @@ daily-report --date 2026-06-01       # 指定日期
 daily-report --tz Asia/Shanghai      # 指定时区
 daily-report --dry-run               # 只采集数据，不调 LLM
 daily-report --no-save               # 不保存 Markdown 文件
-daily-report --quiet                 # 只保存文件，不打印
+daily-report --quiet                 # 不打印日报正文，仅显示进度和保存路径
 daily-report --todo "完成测试,提 PR"  # 手动补充明日计划
 daily-report --verbose               # 详细日志
 daily-report --max-retries 3         # LLM 调用最大重试次数，默认 5

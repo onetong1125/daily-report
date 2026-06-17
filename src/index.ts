@@ -12,6 +12,7 @@ import { mergeAndDedup } from "./merger";
 import { generateReport } from "./generator";
 import { formatTerminal, formatMarkdown, saveReport } from "./formatter";
 import { runSetup, selectTrackedRepos } from "./setup";
+import { shouldPrintLlmNotice, shouldPrintReportBody, shouldPrintSavedReportPath } from "./cli-output";
 import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
 import { DailyReportConfig, SanitizedEvent } from "./types";
 import * as fs from "fs";
@@ -48,7 +49,7 @@ program
   .option("--dry-run", "只采集和预览数据，不调用 LLM")
   .option("--max-retries <number>", "LLM 调用最大重试次数，默认 5")
   .option("--no-save", "不保存 Markdown 文件")
-  .option("-q, --quiet", "只保存文件，不打印到终端")
+  .option("-q, --quiet", "不打印日报正文，仅显示进度和保存路径")
   .option("--todo <text>", "手动补充明天的行动计划")
   .option("-v, --verbose", "详细日志输出")
   .action(async (options) => {
@@ -166,13 +167,13 @@ program
       if (options.save !== false) {
         const md = `# 📋 日报 - ${boundary.date}\n\n## TL;DR\n- 今天没有活动记录，享受休息日 ☀️\n`;
         const filePath = saveReport(md, boundary.date, getReportsDir(config));
-        if (!options.quiet) console.log(`📄 日报已保存: ${filePath}\n`);
+        if (shouldPrintSavedReportPath(options)) console.log(`📄 日报已保存: ${filePath}\n`);
       }
       return;
     }
 
     // 5. Generate report (with LLM)
-    if (config.privacy.requireConfirmation && !options.quiet) {
+    if (shouldPrintLlmNotice(config)) {
       console.log("即将调用 LLM 生成日报...");
       // In non-interactive mode, just proceed
     }
@@ -181,7 +182,7 @@ program
     const report = await generateReport(grouped, config, boundary.date, options.todo);
 
     // 6. Output
-    if (!options.quiet) {
+    if (shouldPrintReportBody(config, options)) {
       formatTerminal(report);
     }
 
@@ -189,7 +190,7 @@ program
     if (options.save !== false) {
       const markdown = formatMarkdown(report, grouped);
       const filePath = saveReport(markdown, boundary.date, getReportsDir(config));
-      if (!options.quiet) console.log(`📄 日报已保存: ${filePath}\n`);
+      if (shouldPrintSavedReportPath(options)) console.log(`📄 日报已保存: ${filePath}\n`);
     }
   });
 
