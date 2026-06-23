@@ -1,5 +1,6 @@
 import { DailyReport, GroupedEvents, SanitizedEvent } from "./types";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 
 // ANSI color codes for terminal output
@@ -15,6 +16,18 @@ const C = {
   red: "\x1b[31m",
 };
 
+export const TEMPLATE_FALLBACK_MARKER = "<!-- daily-report:generation=template -->";
+
+function fallbackNotice(report: DailyReport): string | null {
+  if (report.generation?.source !== "template") return null;
+  return report.generation.fallbackReason || "LLM 调用失败，已回退到模板生成";
+}
+
+function generationMarker(report: DailyReport): string {
+  const source = report.generation?.source || "llm";
+  return `<!-- daily-report:generation=${source} -->`;
+}
+
 /**
  * Format and print the daily report to terminal (project-oriented).
  */
@@ -26,6 +39,12 @@ export function formatTerminal(report: DailyReport): void {
   console.log("");
   console.log(`${C.cyan}${C.bold}📋 日报 - ${report.date}（${weekday}）${C.reset}`);
   console.log(`${C.dim}${"─".repeat(50)}${C.reset}`);
+
+  const notice = fallbackNotice(report);
+  if (notice) {
+    console.log(`\n${C.yellow}${C.bold}⚠️  模板日报${C.reset}`);
+    console.log(`  ${notice}`);
+  }
 
   // TL;DR
   console.log(`\n${C.yellow}${C.bold}TL;DR${C.reset}`);
@@ -79,7 +98,15 @@ export function formatMarkdown(
   const weekday = weekdays[dateObj.getDay()];
 
   lines.push(`# 📋 日报 - ${report.date}（${weekday}）`);
+  lines.push(generationMarker(report));
   lines.push("");
+
+  const notice = fallbackNotice(report);
+  if (notice) {
+    lines.push("> ⚠️ **模板日报**：LLM 未成功生成正文，本日报由本地模板回退生成，内容可能不完整。");
+    lines.push(`> 原因：${notice}`);
+    lines.push("");
+  }
 
   // TL;DR
   lines.push("## TL;DR");
@@ -162,6 +189,25 @@ export function formatMarkdown(
   return lines.join("\n");
 }
 
+function resolveOutputDir(outputDir: string): string {
+  return outputDir.replace(/^~/, os.homedir());
+}
+
+export function getReportFilePath(date: string, outputDir: string): string {
+  return path.join(resolveOutputDir(outputDir), `${date}.md`);
+}
+
+export function isTemplateFallbackMarkdown(markdown: string): boolean {
+  return markdown.includes(TEMPLATE_FALLBACK_MARKER);
+}
+
+export function shouldSkipFallbackOverwrite(date: string, outputDir: string): boolean {
+  const filePath = getReportFilePath(date, outputDir);
+  if (!fs.existsSync(filePath)) return false;
+  const existing = fs.readFileSync(filePath, "utf-8");
+  return !isTemplateFallbackMarkdown(existing);
+}
+
 /**
  * Save the Markdown report to file.
  */
@@ -170,11 +216,11 @@ export function saveReport(
   date: string,
   outputDir: string
 ): string {
-  const dir = outputDir.replace(/^~/, require("os").homedir());
+  const dir = resolveOutputDir(outputDir);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  const filePath = path.join(dir, `${date}.md`);
+  const filePath = getReportFilePath(date, outputDir);
   fs.writeFileSync(filePath, markdown, "utf-8");
   return filePath;
 }

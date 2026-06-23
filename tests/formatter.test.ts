@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { formatMarkdown } from "../src/formatter";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { formatMarkdown, saveReport, shouldSkipFallbackOverwrite } from "../src/formatter";
 import { DailyReport, GroupedEvents, SanitizedEvent } from "../src/types";
 
 function makeEvent(overrides: Partial<SanitizedEvent> = {}): SanitizedEvent {
@@ -38,6 +41,7 @@ describe("formatMarkdown", () => {
 
     expect(md).toContain("# 📋 日报 - 2026-06-02");
     expect(md).toContain("周二");
+    expect(md).toContain("<!-- daily-report:generation=llm -->");
   });
 
   it("includes TL;DR section", () => {
@@ -87,6 +91,21 @@ describe("formatMarkdown", () => {
     const afterHeader = md.split("📌 明日行动建议")[1] || "";
     const lines = afterHeader.trim().split("\n").filter((l) => l.trim());
     expect(lines).toHaveLength(0);
+  });
+
+  it("marks template fallback reports with a visible warning", () => {
+    const md = formatMarkdown({
+      ...report,
+      generation: {
+        source: "template",
+        fallbackReason: "LLM API 调用失败，已回退到模板生成",
+      },
+    });
+
+    expect(md).toContain("<!-- daily-report:generation=template -->");
+    expect(md).toContain("⚠️ **模板日报**");
+    expect(md).toContain("LLM 未成功生成正文");
+    expect(md).toContain("LLM API 调用失败，已回退到模板生成");
   });
 
   it("generates Git activity table for matching project events", () => {
@@ -203,5 +222,27 @@ describe("formatMarkdown", () => {
     expect(md).not.toContain("### Codex 对话");
     expect(md).not.toContain("- 代码审查");
     expect(md).toContain("完成 project-a 的登录功能");
+  });
+});
+
+describe("fallback overwrite policy", () => {
+  it("skips writing a template fallback over an existing successful report", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "daily-report-formatter-"));
+    saveReport("# 📋 日报\n<!-- daily-report:generation=llm -->\n", "2026-06-02", dir);
+
+    expect(shouldSkipFallbackOverwrite("2026-06-02", dir)).toBe(true);
+  });
+
+  it("allows replacing an existing template fallback report", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "daily-report-formatter-"));
+    saveReport("# 📋 日报\n<!-- daily-report:generation=template -->\n", "2026-06-02", dir);
+
+    expect(shouldSkipFallbackOverwrite("2026-06-02", dir)).toBe(false);
+  });
+
+  it("allows writing when the report does not exist yet", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "daily-report-formatter-"));
+
+    expect(shouldSkipFallbackOverwrite("2026-06-02", dir)).toBe(false);
   });
 });

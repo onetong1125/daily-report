@@ -38,6 +38,10 @@ export interface DailyReport {
   projects: ProjectSummary[];
   other_ai: string;
   tomorrow_suggestions: string[];
+  generation?: {
+    source: "llm" | "template";
+    fallbackReason?: string;
+  };
 }
 
 // Config types

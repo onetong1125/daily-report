@@ -10,7 +10,7 @@ import { collectCodexEvents } from "./collectors/codex-collector";
 import { sanitizeEvents } from "./sanitizer";
 import { mergeAndDedup } from "./merger";
 import { generateReport } from "./generator";
-import { formatTerminal, formatMarkdown, saveReport } from "./formatter";
+import { formatTerminal, formatMarkdown, getReportFilePath, saveReport, shouldSkipFallbackOverwrite } from "./formatter";
 import { runSetup, selectTrackedRepos } from "./setup";
 import { shouldPrintLlmNotice, shouldPrintReportBody, shouldPrintSavedReportPath } from "./cli-output";
 import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
@@ -188,8 +188,17 @@ program
 
     // Save to file
     if (options.save !== false) {
+      const outputDir = getReportsDir(config);
       const markdown = formatMarkdown(report, grouped);
-      const filePath = saveReport(markdown, boundary.date, getReportsDir(config));
+      if (report.generation?.source === "template" && shouldSkipFallbackOverwrite(boundary.date, outputDir)) {
+        const filePath = getReportFilePath(boundary.date, outputDir);
+        if (shouldPrintSavedReportPath(options)) {
+          console.log(`⚠️  LLM 生成失败，已保留已有成功日报: ${filePath}\n`);
+        }
+        return;
+      }
+
+      const filePath = saveReport(markdown, boundary.date, outputDir);
       if (shouldPrintSavedReportPath(options)) console.log(`📄 日报已保存: ${filePath}\n`);
     }
   });
