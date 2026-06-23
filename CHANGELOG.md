@@ -8,13 +8,7 @@ running `npm run release`.
 
 ## Unreleased
 
-### Fixed
-
-- Marked template fallback reports when LLM generation fails.
-- Prevented LLM fallback reports from replacing an existing successful report
-  for the same day.
-- Kept LLM notice text and the saved report path visible when running
-  `daily-report --quiet`.
+## 0.2.3 - 2026-06-23
 
 ### Changed
 
@@ -29,6 +23,11 @@ running `npm run release`.
 
 ### Fixed
 
+- Marked template fallback reports when LLM generation fails.
+- Prevented LLM fallback reports from replacing an existing successful report
+  for the same day.
+- Kept LLM notice text and the saved report path visible when running
+  `daily-report --quiet`.
 - Rejected invalid repository paths in `daily-report config repos`.
 - Prevented duplicate repository entries in `daily-report config repos`.
 - Added test coverage for interactive repository selection.
