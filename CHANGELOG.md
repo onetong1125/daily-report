@@ -8,6 +8,11 @@ running `npm run release`.
 
 ## Unreleased
 
+### Fixed
+
+- Applied `daily-report config schedule` changes to the system scheduler
+  immediately instead of requiring a separate `daily-report schedule on`.
+
 ## 0.2.3 - 2026-06-23
 
 ### Changed

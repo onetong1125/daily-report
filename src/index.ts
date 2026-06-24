@@ -14,6 +14,7 @@ import { formatTerminal, formatMarkdown, getReportFilePath, saveReport, shouldSk
 import { runSetup, selectTrackedRepos } from "./setup";
 import { shouldPrintLlmNotice, shouldPrintReportBody, shouldPrintSavedReportPath } from "./cli-output";
 import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
+import { applyScheduleConfig } from "./schedule-config";
 import { DailyReportConfig, SanitizedEvent } from "./types";
 import * as fs from "fs";
 import * as path from "path";
@@ -292,19 +293,22 @@ configCmd
       },
       { type: "list", name: "freq", message: "频率:", choices: ["每天", "工作日", "周末"], default: "工作日", when: (a: any) => a.enabled },
     ]);
+    const nextSchedule = { ...config.schedule, enabled: answers.enabled };
     if (answers.enabled) {
       const freqMap: Record<string, string> = { "每天": "", "工作日": "weekday", "周末": "weekend" };
       try {
-        config.schedule.cron = parseTimeExpression(`${answers.time} ${freqMap[answers.freq] || ""}`);
+        nextSchedule.cron = parseTimeExpression(`${answers.time} ${freqMap[answers.freq] || ""}`);
       } catch (err: any) {
         console.error(`❌ 无效的定时设置: ${err.message}`);
         process.exitCode = 1;
         return;
       }
     }
-    config.schedule.enabled = answers.enabled;
-    saveConfig(config);
-    console.log("✅ 定时设置已更新");
+    if (!applyScheduleConfig(config, nextSchedule)) {
+      process.exitCode = 1;
+      return;
+    }
+    console.log("✅ 定时设置已更新并已同步到系统调度");
   });
 
 // ============================================================
