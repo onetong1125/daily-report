@@ -56,6 +56,7 @@ TOMORROW:
       "补充 JWT 测试用例",
       "跑 CI 验证",
     ]);
+    expect(report.generation?.source).toBe("llm");
   });
 
   it("parses TL;DR with asterisk and dash bullets", () => {
@@ -171,6 +172,8 @@ describe("templateReport", () => {
 
     expect(report.tldr.length).toBeGreaterThan(0);
     expect(report.projects.length).toBeGreaterThan(0);
+    expect(report.generation?.source).toBe("template");
+    expect(report.generation?.fallbackReason).toContain("LLM");
     // project-a should appear in tldr with the summary
     expect(report.tldr.some((t) => t.includes("project-a"))).toBe(true);
   });

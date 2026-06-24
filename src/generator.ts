@@ -230,6 +230,9 @@ export function parseResponse(text: string, date: string): DailyReport {
     projects: [],
     other_ai: "",
     tomorrow_suggestions: [],
+    generation: {
+      source: "llm",
+    },
   };
 
   // Parse TL;DR
@@ -283,7 +286,8 @@ export function parseResponse(text: string, date: string): DailyReport {
 export function templateReport(
   grouped: GroupedEvents,
   date: string,
-  manualTodo?: string
+  manualTodo?: string,
+  fallbackReason = "LLM 调用失败，已回退到模板生成"
 ): DailyReport {
   const tldr: string[] = [];
   const projects: ProjectSummary[] = [];
@@ -379,6 +383,10 @@ export function templateReport(
     projects,
     other_ai: otherAI,
     tomorrow_suggestions: tomorrow,
+    generation: {
+      source: "template",
+      fallbackReason,
+    },
   };
 }
 
@@ -521,7 +529,7 @@ export async function generateReport(
 
   if (!apiKey) {
     console.warn("⚠️  未配置 API Key，使用模板生成日报");
-    return templateReport(grouped, date, manualTodo);
+    return templateReport(grouped, date, manualTodo, "未配置 API Key，使用模板生成日报");
   }
 
   const prompt = buildPrompt(grouped, date, manualTodo);
@@ -610,6 +618,12 @@ export async function generateReport(
   } catch (err: any) {
     console.warn(`❌ LLM API 已重试 ${maxRetries}/${maxRetries} 次，全部失败，回退到模板生成`);
     console.warn(`   最后错误: ${err?.message || err}`);
-    return templateReport(grouped, date, manualTodo);
+    const lastError = err?.message || String(err);
+    return templateReport(
+      grouped,
+      date,
+      manualTodo,
+      `LLM API 调用失败，已回退到模板生成；最后错误：${lastError.slice(0, 160)}`
+    );
   }
 }
