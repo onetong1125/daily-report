@@ -88,6 +88,11 @@ daily-report schedule off                  # 关闭定时
 daily-report schedule status               # 查看状态
 ```
 
+定时任务运行时会按日期写入日志：
+
+- `~/.daily-report/logs/YYYY-MM-DD.stdout.log`：采集、生成、保存路径等进度输出
+- `~/.daily-report/logs/YYYY-MM-DD.stderr.log`：警告和错误输出
+
 ## 配置文件
 
 配置保存在 `~/.daily-report/config.json`：
@@ -173,6 +178,7 @@ daily-report schedule status               # 查看状态
 - **运行时**：Node.js ≥ 18
 - **CLI 框架**：Commander.js + Inquirer.js
 - **定时任务**：macOS launchd / Linux crontab
+- **定时日志**：`~/.daily-report/logs/YYYY-MM-DD.{stdout,stderr}.log`
 
 ## 开发
 

@@ -8,6 +8,11 @@ running `npm run release`.
 
 ## Unreleased
 
+### Changed
+
+- Wrote scheduled-run output to dated stdout/stderr log files under
+  `~/.daily-report/logs/`.
+
 ### Fixed
 
 - Applied `daily-report config schedule` changes to the system scheduler
