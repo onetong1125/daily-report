@@ -7,8 +7,7 @@ import { todayInTimezone } from "./timeboundary";
 import { DailyReportConfig } from "./types";
 
 export interface ScheduledLogPaths {
-  stdout: string;
-  stderr: string;
+  log: string;
 }
 
 export interface ScheduledLogOptions {
@@ -19,8 +18,7 @@ export interface ScheduledLogOptions {
 
 export function getScheduledLogPaths(logsDir: string, date: string): ScheduledLogPaths {
   return {
-    stdout: path.join(logsDir, `${date}.stdout.log`),
-    stderr: path.join(logsDir, `${date}.stderr.log`),
+    log: path.join(logsDir, `${date}.log`),
   };
 }
 
@@ -28,14 +26,26 @@ function writeLine(fd: number, message: string): void {
   fs.writeSync(fd, `${message}\n`);
 }
 
-function patchConsole(stdoutFd: number, stderrFd: number): () => void {
+function writeTaggedLines(fd: number, tag: string, message: string): void {
+  const lines = message.replace(/\r\n/g, "\n").split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  if (lines.length === 0) {
+    writeLine(fd, `[${tag}]`);
+    return;
+  }
+  for (const line of lines) {
+    writeLine(fd, `[${tag}] ${line}`);
+  }
+}
+
+function patchConsole(logFd: number): () => void {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalError = console.error;
 
-  console.log = (...args: unknown[]) => writeLine(stdoutFd, format(...args));
-  console.warn = (...args: unknown[]) => writeLine(stderrFd, format(...args));
-  console.error = (...args: unknown[]) => writeLine(stderrFd, format(...args));
+  console.log = (...args: unknown[]) => writeLine(logFd, format(...args));
+  console.warn = (...args: unknown[]) => writeTaggedLines(logFd, "stderr", format(...args));
+  console.error = (...args: unknown[]) => writeTaggedLines(logFd, "stderr", format(...args));
 
   return () => {
     console.log = originalLog;
@@ -56,12 +66,11 @@ export async function runWithScheduledLogs(
 
   fs.mkdirSync(logsDir, { recursive: true });
 
-  const stdoutFd = fs.openSync(logPaths.stdout, "a");
-  const stderrFd = fs.openSync(logPaths.stderr, "a");
-  const restoreConsole = patchConsole(stdoutFd, stderrFd);
+  const logFd = fs.openSync(logPaths.log, "a");
+  const restoreConsole = patchConsole(logFd);
 
   try {
-    writeLine(stdoutFd, `=== daily-report scheduled run started ${now().toISOString()} ===`);
+    writeLine(logFd, `=== daily-report scheduled run started ${now().toISOString()} ===`);
     logRunHeader({
       version: getVersion(),
       timezone: config.report.timezone,
@@ -70,14 +79,13 @@ export async function runWithScheduledLogs(
       repoCount: config.repos.length,
     });
     await run();
-    writeLine(stdoutFd, `=== daily-report scheduled run finished ${now().toISOString()} ===`);
+    writeLine(logFd, `=== daily-report scheduled run finished ${now().toISOString()} ===`);
   } catch (err: any) {
-    writeLine(stderrFd, `=== daily-report scheduled run failed ${now().toISOString()} ===`);
-    writeLine(stderrFd, err?.stack || err?.message || String(err));
+    writeLine(logFd, `=== daily-report scheduled run failed ${now().toISOString()} ===`);
+    writeTaggedLines(logFd, "stderr", err?.stack || err?.message || String(err));
     throw err;
   } finally {
     restoreConsole();
-    fs.closeSync(stdoutFd);
-    fs.closeSync(stderrFd);
+    fs.closeSync(logFd);
   }
 }

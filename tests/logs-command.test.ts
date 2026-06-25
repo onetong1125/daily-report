@@ -7,15 +7,38 @@ import {
 } from "../src/logs-command";
 
 describe("discoverDatedLogs", () => {
-  it("pairs dated stdout and stderr logs and sorts newest first", () => {
+  it("discovers dated combined logs and sorts newest first", () => {
     const logs = discoverDatedLogs("/logs", {
       existsSync: () => true,
       readdirSync: () => [
-        "2026-06-23.stdout.log",
-        "2026-06-24.stderr.log",
-        "2026-06-24.stdout.log",
+        "2026-06-23.log",
+        "2026-06-24.log",
         "stdout.log",
         "not-a-log.txt",
+      ],
+      statSync: (filePath) => ({ size: filePath.includes("2026-06-24") ? 34 : 12 }),
+    });
+
+    expect(logs).toEqual([
+      {
+        date: "2026-06-24",
+        log: "/logs/2026-06-24.log",
+        size: 34,
+      },
+      {
+        date: "2026-06-23",
+        log: "/logs/2026-06-23.log",
+        size: 12,
+      },
+    ]);
+  });
+
+  it("keeps legacy dated stdout and stderr logs discoverable", () => {
+    const logs = discoverDatedLogs("/logs", {
+      existsSync: () => true,
+      readdirSync: () => [
+        "2026-06-24.stderr.log",
+        "2026-06-24.stdout.log",
       ],
       statSync: (filePath) => ({ size: filePath.includes("stderr") ? 12 : 34 }),
     });
@@ -23,17 +46,10 @@ describe("discoverDatedLogs", () => {
     expect(logs).toEqual([
       {
         date: "2026-06-24",
-        stdout: "/logs/2026-06-24.stdout.log",
-        stderr: "/logs/2026-06-24.stderr.log",
-        stdoutSize: 34,
-        stderrSize: 12,
-      },
-      {
-        date: "2026-06-23",
-        stdout: "/logs/2026-06-23.stdout.log",
-        stderr: undefined,
-        stdoutSize: 34,
-        stderrSize: undefined,
+        legacyStdout: "/logs/2026-06-24.stdout.log",
+        legacyStderr: "/logs/2026-06-24.stderr.log",
+        legacyStdoutSize: 34,
+        legacyStderrSize: 12,
       },
     ]);
   });
@@ -44,27 +60,22 @@ describe("formatLogList", () => {
     expect(formatLogList([
       {
         date: "2026-06-24",
-        stdout: "/logs/2026-06-24.stdout.log",
-        stderr: "/logs/2026-06-24.stderr.log",
-        stdoutSize: 34,
-        stderrSize: 12,
+        log: "/logs/2026-06-24.log",
+        size: 34,
       },
     ])).toContain("2026-06-24");
   });
 });
 
 describe("formatLatestLogSummary", () => {
-  it("prints latest stdout and stderr paths", () => {
+  it("prints latest combined log path", () => {
     expect(formatLatestLogSummary({
       date: "2026-06-24",
-      stdout: "/logs/2026-06-24.stdout.log",
-      stderr: "/logs/2026-06-24.stderr.log",
-      stdoutSize: 34,
-      stderrSize: 12,
+      log: "/logs/2026-06-24.log",
+      size: 34,
     })).toBe([
-      "latest scheduled logs: 2026-06-24",
-      "stdout: /logs/2026-06-24.stdout.log (34 bytes)",
-      "stderr: /logs/2026-06-24.stderr.log (12 bytes)",
+      "latest scheduled log: 2026-06-24",
+      "log: /logs/2026-06-24.log (34 bytes)",
     ].join("\n"));
   });
 });

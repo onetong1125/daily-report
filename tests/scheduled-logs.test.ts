@@ -42,16 +42,15 @@ function makeConfig(): DailyReportConfig {
 }
 
 describe("getScheduledLogPaths", () => {
-  it("uses dated stdout and stderr log files", () => {
+  it("uses a dated combined log file", () => {
     expect(getScheduledLogPaths("/tmp/daily-report-logs", "2026-06-24")).toEqual({
-      stdout: path.join("/tmp/daily-report-logs", "2026-06-24.stdout.log"),
-      stderr: path.join("/tmp/daily-report-logs", "2026-06-24.stderr.log"),
+      log: path.join("/tmp/daily-report-logs", "2026-06-24.log"),
     });
   });
 });
 
 describe("runWithScheduledLogs", () => {
-  it("routes scheduled output to dated log files", async () => {
+  it("routes scheduled output to a dated combined log file", async () => {
     const logsDir = fs.mkdtempSync(path.join(os.tmpdir(), "daily-report-logs-"));
 
     await runWithScheduledLogs(
@@ -60,6 +59,7 @@ describe("runWithScheduledLogs", () => {
         console.log("stdout message");
         console.log("count: %d", 3);
         console.warn("stderr message");
+        console.log("after warning");
       },
       {
         date: "2026-06-24",
@@ -68,18 +68,20 @@ describe("runWithScheduledLogs", () => {
       }
     );
 
-    const stdout = fs.readFileSync(path.join(logsDir, "2026-06-24.stdout.log"), "utf-8");
-    const stderr = fs.readFileSync(path.join(logsDir, "2026-06-24.stderr.log"), "utf-8");
+    const log = fs.readFileSync(path.join(logsDir, "2026-06-24.log"), "utf-8");
 
-    expect(stdout).toContain("=== daily-report scheduled run started 2026-06-24T10:30:00.000Z ===");
-    expect(stdout).toContain("[run] run_id=");
-    expect(stdout).toContain("version=");
-    expect(stdout).toContain("timezone=Asia/Shanghai");
-    expect(stdout).toContain("report_date=2026-06-24");
-    expect(stdout).toContain("repos=0");
-    expect(stdout).toContain("stdout message");
-    expect(stdout).toContain("count: 3");
-    expect(stdout).toContain("=== daily-report scheduled run finished 2026-06-24T10:30:00.000Z ===");
-    expect(stderr).toContain("stderr message");
+    expect(log).toContain("=== daily-report scheduled run started 2026-06-24T10:30:00.000Z ===");
+    expect(log).toContain("[run] run_id=");
+    expect(log).toContain("version=");
+    expect(log).toContain("timezone=Asia/Shanghai");
+    expect(log).toContain("report_date=2026-06-24");
+    expect(log).toContain("repos=0");
+    expect(log).toContain("stdout message");
+    expect(log).toContain("count: 3");
+    expect(log).toContain("[stderr] stderr message");
+    expect(log).toContain("after warning");
+    expect(log).toContain("=== daily-report scheduled run finished 2026-06-24T10:30:00.000Z ===");
+    expect(log.indexOf("stdout message")).toBeLessThan(log.indexOf("[stderr] stderr message"));
+    expect(log.indexOf("[stderr] stderr message")).toBeLessThan(log.indexOf("after warning"));
   });
 });

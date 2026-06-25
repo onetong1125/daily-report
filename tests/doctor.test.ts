@@ -90,11 +90,12 @@ describe("collectDoctorChecks", () => {
         "/repo/ok/.git",
         "/home/me/.claude/projects",
         "/home/me/.codex/sessions",
-        "/home/me/.daily-report/logs/2026-06-24.stdout.log",
+        "/home/me/.daily-report/logs",
+        "/home/me/.daily-report/reports",
         "/home/me/.daily-report/reports/2026-06-24.md",
       ].includes(filePath),
       readdirSync: (dir) => {
-        if (dir === "/home/me/.daily-report/logs") return ["2026-06-24.stdout.log", "2026-06-24.stderr.log"];
+        if (dir === "/home/me/.daily-report/logs") return ["2026-06-24.log"];
         if (dir === "/home/me/.daily-report/reports") return ["2026-06-24.md"];
         return [];
       },

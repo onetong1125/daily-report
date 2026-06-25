@@ -81,6 +81,20 @@ function hasFiles(
   }
 }
 
+function hasDatedLogs(
+  dir: string,
+  deps: Required<Pick<DoctorDeps, "existsSync" | "readdirSync">>
+): boolean {
+  try {
+    if (!deps.existsSync(dir)) return false;
+    return deps.readdirSync(dir).some((name) =>
+      /^\d{4}-\d{2}-\d{2}(\.(stdout|stderr))?\.log$/.test(name)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
   const configPath = deps.configPath ?? getConfigPath();
   const existsSync = deps.existsSync ?? fs.existsSync;
@@ -156,7 +170,7 @@ export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
   }
 
   const fileDeps = { existsSync, readdirSync };
-  checks.push(hasFiles(logsDir, ".stdout.log", fileDeps)
+  checks.push(hasDatedLogs(logsDir, fileDeps)
     ? { name: "logs", status: "ok", message: "找到最近的定时日志", details: logsDir }
     : { name: "logs", status: "warn", message: "没有找到定时日志", details: logsDir, action: "等待一次定时运行或执行 daily-report run-scheduled" });
 

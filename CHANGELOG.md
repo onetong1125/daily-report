@@ -18,8 +18,8 @@ running `npm run release`.
 
 - Made `daily-report doctor` action lines include their check name so remediation
   steps are clearly tied to the warning or error item.
-- Wrote scheduled-run output to dated stdout/stderr log files under
-  `~/.daily-report/logs/`.
+- Wrote scheduled-run output to a single dated log file under
+  `~/.daily-report/logs/`, with stderr lines marked inline.
 - Added run metadata and phase timing lines to scheduled logs and manual
   `--verbose` output.
 

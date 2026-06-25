@@ -4,10 +4,12 @@ import { getLogsDir } from "./config";
 
 export interface DatedLogFiles {
   date: string;
-  stdout?: string;
-  stderr?: string;
-  stdoutSize?: number;
-  stderrSize?: number;
+  log?: string;
+  size?: number;
+  legacyStdout?: string;
+  legacyStderr?: string;
+  legacyStdoutSize?: number;
+  legacyStderrSize?: number;
 }
 
 export interface LogFsDeps {
@@ -32,20 +34,25 @@ export function discoverDatedLogs(logsDir: string = getLogsDir(), deps: LogFsDep
 
   const byDate = new Map<string, DatedLogFiles>();
   for (const name of fsDeps.readdirSync(logsDir)) {
-    const match = name.match(/^(\d{4}-\d{2}-\d{2})\.(stdout|stderr)\.log$/);
-    if (!match) continue;
+    const combinedMatch = name.match(/^(\d{4}-\d{2}-\d{2})\.log$/);
+    const legacyMatch = name.match(/^(\d{4}-\d{2}-\d{2})\.(stdout|stderr)\.log$/);
+    if (!combinedMatch && !legacyMatch) continue;
 
-    const [, date, stream] = match;
+    const date = combinedMatch?.[1] ?? legacyMatch?.[1] as string;
+    const stream = legacyMatch?.[2];
     const current = byDate.get(date) ?? { date };
     const filePath = path.join(logsDir, name);
     const size = fsDeps.statSync(filePath).size;
 
-    if (stream === "stdout") {
-      current.stdout = filePath;
-      current.stdoutSize = size;
+    if (!stream) {
+      current.log = filePath;
+      current.size = size;
+    } else if (stream === "stdout") {
+      current.legacyStdout = filePath;
+      current.legacyStdoutSize = size;
     } else {
-      current.stderr = filePath;
-      current.stderrSize = size;
+      current.legacyStderr = filePath;
+      current.legacyStderrSize = size;
     }
 
     byDate.set(date, current);
@@ -56,11 +63,19 @@ export function discoverDatedLogs(logsDir: string = getLogsDir(), deps: LogFsDep
 
 export function formatLogList(logs: DatedLogFiles[]): string {
   if (logs.length === 0) return "No scheduled logs found.";
-  return logs.map((log) => [
-    log.date,
-    `  stdout: ${log.stdout ?? "(missing)"}`,
-    `  stderr: ${log.stderr ?? "(missing)"}`,
-  ].join("\n")).join("\n\n");
+  return logs.map((log) => {
+    if (log.log) {
+      return [
+        log.date,
+        `  log: ${log.log}`,
+      ].join("\n");
+    }
+    return [
+      log.date,
+      `  legacy stdout: ${log.legacyStdout ?? "(missing)"}`,
+      `  legacy stderr: ${log.legacyStderr ?? "(missing)"}`,
+    ].join("\n");
+  }).join("\n\n");
 }
 
 function sizeText(size: number | undefined): string {
@@ -69,10 +84,17 @@ function sizeText(size: number | undefined): string {
 
 export function formatLatestLogSummary(log: DatedLogFiles | undefined): string {
   if (!log) return "No scheduled logs found.";
+  if (log.log) {
+    return [
+      `latest scheduled log: ${log.date}`,
+      `log: ${log.log} (${sizeText(log.size)})`,
+    ].join("\n");
+  }
+
   return [
-    `latest scheduled logs: ${log.date}`,
-    `stdout: ${log.stdout ?? "(missing)"} (${sizeText(log.stdoutSize)})`,
-    `stderr: ${log.stderr ?? "(missing)"} (${sizeText(log.stderrSize)})`,
+    `latest scheduled log: ${log.date}`,
+    `legacy stdout: ${log.legacyStdout ?? "(missing)"} (${sizeText(log.legacyStdoutSize)})`,
+    `legacy stderr: ${log.legacyStderr ?? "(missing)"} (${sizeText(log.legacyStderrSize)})`,
   ].join("\n");
 }
 
@@ -88,14 +110,13 @@ export function printLatestLogSummary(): void {
   console.log(formatLatestLogSummary(discoverDatedLogs()[0]));
 }
 
-export function printLogTail(options: { lines?: string; stream?: "stdout" | "stderr" } = {}): void {
+export function printLogTail(options: { lines?: string } = {}): void {
   const lineCount = Math.max(1, Number.parseInt(options.lines ?? "80", 10) || 80);
-  const stream = options.stream ?? "stdout";
   const latest = discoverDatedLogs()[0];
-  const filePath = stream === "stderr" ? latest?.stderr : latest?.stdout;
+  const filePath = latest?.log ?? latest?.legacyStdout ?? latest?.legacyStderr;
 
   if (!latest || !filePath) {
-    console.log(`No ${stream} scheduled log found.`);
+    console.log("No scheduled log found.");
     return;
   }
 

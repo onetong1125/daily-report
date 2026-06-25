@@ -84,8 +84,8 @@ daily-report config schedule         # 修改定时设置
 daily-report doctor                 # 检查配置、采集源、定时任务和最近日志
 daily-report logs list              # 列出定时任务日志
 daily-report logs latest            # 查看最近一次定时日志路径
-daily-report logs tail              # 打印最近一次 stdout 日志尾部
-daily-report logs tail --stream stderr --lines 80
+daily-report logs tail              # 打印最近一次定时日志尾部
+daily-report logs tail --lines 80
 ```
 
 遇到定时任务、采集源或配置问题时，先运行 `daily-report doctor`。输出会检查配置文件、API Key 是否可解析、仓库路径、GitHub CLI、Claude/Codex 会话目录、系统调度状态、最近日志和最近日报。命令不会打印 API Key 原文。
@@ -102,10 +102,9 @@ daily-report schedule status               # 查看状态
 
 定时任务运行时会按日期写入日志：
 
-- `~/.daily-report/logs/YYYY-MM-DD.stdout.log`：采集、生成、保存路径等进度输出
-- `~/.daily-report/logs/YYYY-MM-DD.stderr.log`：警告和错误输出
+- `~/.daily-report/logs/YYYY-MM-DD.log`：采集、生成、保存路径、警告和错误输出
 
-定时任务日志包含运行头部和阶段耗时；手动运行 `daily-report --verbose` 时也会在终端显示同类诊断信息。
+定时任务日志包含运行头部和阶段耗时；警告和错误行会带 `[stderr]` 标记，方便在同一个文件里按顺序排查。手动运行 `daily-report --verbose` 时也会在终端显示同类诊断信息。
 
 ## 配置文件
 
@@ -192,7 +191,7 @@ daily-report schedule status               # 查看状态
 - **运行时**：Node.js ≥ 18
 - **CLI 框架**：Commander.js + Inquirer.js
 - **定时任务**：macOS launchd / Linux crontab
-- **定时日志**：`~/.daily-report/logs/YYYY-MM-DD.{stdout,stderr}.log`
+- **定时日志**：`~/.daily-report/logs/YYYY-MM-DD.log`
 
 ## 开发
 

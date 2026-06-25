@@ -181,13 +181,7 @@ logsCmd
   .command("tail")
   .description("打印最近一次定时任务日志尾部")
   .option("-n, --lines <number>", "打印行数，默认 80")
-  .option("--stream <stream>", "stdout 或 stderr，默认 stdout", "stdout")
   .action((options) => {
-    if (options.stream !== "stdout" && options.stream !== "stderr") {
-      console.error("❌ --stream 只支持 stdout 或 stderr");
-      process.exitCode = 1;
-      return;
-    }
     printLogTail(options);
   });
 
