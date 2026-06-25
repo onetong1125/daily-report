@@ -44,9 +44,9 @@ describe("formatDoctorReport", () => {
       "",
       "✅ config: 配置文件可读取 (~/.daily-report/config.json)",
       "⚠️  github: gh 不可用，跳过 GitHub 数据采集",
-      "   action: 运行 gh auth status 检查登录状态",
+      "   └─ github action: 运行 gh auth status 检查登录状态",
       "❌ scheduler: 系统调度未注册",
-      "   action: 运行 daily-report schedule on",
+      "   └─ scheduler action: 运行 daily-report schedule on",
       "",
       "summary: ok=1 warn=1 error=1",
     ].join("\n"));
@@ -54,6 +54,28 @@ describe("formatDoctorReport", () => {
 });
 
 describe("collectDoctorChecks", () => {
+  function collectSchedulerCheck(enabled: boolean, scheduled: boolean) {
+    const config = makeConfig();
+    config.schedule.enabled = enabled;
+
+    return collectDoctorChecks({
+      config,
+      configPath: "/home/me/.daily-report/config.json",
+      logsDir: "/home/me/.daily-report/logs",
+      reportsDir: "/home/me/.daily-report/reports",
+      homeDir: "/home/me",
+      env: { OPENAI_API_KEY: "sk-test" },
+      existsSync: (filePath) => [
+        "/home/me/.daily-report/config.json",
+        "/repo/ok",
+        "/repo/ok/.git",
+      ].includes(filePath),
+      readdirSync: () => [],
+      execFileSync: () => "Logged in",
+      isScheduled: () => scheduled,
+    }).find((check) => check.name === "scheduler");
+  }
+
   it("checks config, api key, repos, gh, sessions, scheduler, and recent files", () => {
     const checks = collectDoctorChecks({
       config: makeConfig(),
@@ -95,5 +117,48 @@ describe("collectDoctorChecks", () => {
       ["reports", "ok"],
     ]);
     expect(checks.find((check) => check.name === "repos")?.message).toContain("1 个仓库不可访问");
+  });
+
+  it("does not load or create config before reporting a missing config file", () => {
+    const checks = collectDoctorChecks({
+      configPath: "/home/me/.daily-report/config.json",
+      logsDir: "/home/me/.daily-report/logs",
+      reportsDir: "/home/me/.daily-report/reports",
+      homeDir: "/home/me",
+      env: {},
+      existsSync: () => false,
+      readdirSync: () => {
+        throw new Error("missing directory");
+      },
+      execFileSync: () => {
+        throw new Error("gh unavailable");
+      },
+      isScheduled: () => false,
+      loadConfig: () => {
+        throw new Error("should not load a missing config");
+      },
+    });
+
+    expect(checks.find((check) => check.name === "config")).toMatchObject({
+      status: "warn",
+      message: "配置文件不存在，将使用默认配置",
+      action: "运行 daily-report setup",
+    });
+  });
+
+  it("reports stale system scheduler registration when config is disabled", () => {
+    expect(collectSchedulerCheck(false, true)).toMatchObject({
+      status: "error",
+      message: "配置关闭但系统调度仍注册",
+      action: "运行 daily-report schedule off 清理系统调度",
+    });
+  });
+
+  it("reports missing system scheduler registration when config is enabled", () => {
+    expect(collectSchedulerCheck(true, false)).toMatchObject({
+      status: "error",
+      message: "配置启用但系统调度未注册",
+      action: "运行 daily-report schedule on 或 daily-report schedule set \"21:00\"",
+    });
   });
 });

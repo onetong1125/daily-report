@@ -16,6 +16,8 @@ running `npm run release`.
 
 ### Changed
 
+- Made `daily-report doctor` action lines include their check name so remediation
+  steps are clearly tied to the warning or error item.
 - Wrote scheduled-run output to dated stdout/stderr log files under
   `~/.daily-report/logs/`.
 - Added run metadata and phase timing lines to scheduled logs and manual
@@ -25,6 +27,8 @@ running `npm run release`.
 
 - Applied `daily-report config schedule` changes to the system scheduler
   immediately instead of requiring a separate `daily-report schedule on`.
+- Corrected `daily-report doctor` diagnostics for missing config files and
+  stale system scheduler registrations.
 
 ## 0.2.3 - 2026-06-23
 

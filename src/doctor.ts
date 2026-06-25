@@ -2,7 +2,14 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { execFileSync as defaultExecFileSync } from "child_process";
-import { getConfigPath, getLogsDir, getReportsDir, loadConfig, resolveEnvVarsWithEnv } from "./config";
+import {
+  getConfigPath,
+  getDefaultConfig,
+  getLogsDir,
+  getReportsDir,
+  loadConfig as defaultLoadConfig,
+  resolveEnvVarsWithEnv,
+} from "./config";
 import { isScheduled as defaultIsScheduled } from "./scheduler";
 import { DailyReportConfig } from "./types";
 
@@ -27,6 +34,7 @@ export interface DoctorDeps {
   readdirSync?: (dir: string) => string[];
   execFileSync?: (cmd: string, args: string[]) => string | Buffer;
   isScheduled?: () => boolean;
+  loadConfig?: () => DailyReportConfig;
 }
 
 function icon(status: DoctorStatus): string {
@@ -48,7 +56,7 @@ export function formatDoctorReport(checks: DoctorCheck[]): string {
     const details = check.details ? ` (${check.details})` : "";
     lines.push(`${icon(check.status)} ${check.name}: ${check.message}${details}`);
     if (check.action) {
-      lines.push(`   action: ${check.action}`);
+      lines.push(`   └─ ${check.name} action: ${check.action}`);
     }
   }
 
@@ -74,13 +82,15 @@ function hasFiles(
 }
 
 export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
-  const config = deps.config ?? loadConfig();
   const configPath = deps.configPath ?? getConfigPath();
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const configExists = existsSync(configPath);
+  const loadConfig = deps.loadConfig ?? defaultLoadConfig;
+  const config = deps.config ?? (configExists ? loadConfig() : getDefaultConfig());
   const logsDir = deps.logsDir ?? getLogsDir();
   const reportsDir = deps.reportsDir ?? getReportsDir(config);
   const homeDir = deps.homeDir ?? os.homedir();
   const env = deps.env ?? process.env;
-  const existsSync = deps.existsSync ?? fs.existsSync;
   const readdirSync = deps.readdirSync ?? ((dir: string) => fs.readdirSync(dir));
   const execFileSync = deps.execFileSync ??
     ((cmd: string, args: string[]) => defaultExecFileSync(cmd, args, { stdio: "pipe" }));
@@ -88,7 +98,7 @@ export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
 
   const checks: DoctorCheck[] = [];
 
-  checks.push(existsSync(configPath)
+  checks.push(configExists
     ? { name: "config", status: "ok", message: "配置文件可读取", details: configPath }
     : { name: "config", status: "warn", message: "配置文件不存在，将使用默认配置", action: "运行 daily-report setup" });
 
@@ -119,14 +129,31 @@ export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
     ? { name: "codex", status: "ok", message: "Codex 会话目录存在", details: codexDir }
     : { name: "codex", status: "warn", message: "Codex 会话目录不存在，跳过 Codex 数据采集", details: codexDir });
 
-  checks.push(config.schedule.enabled && isScheduled()
-    ? { name: "scheduler", status: "ok", message: "系统调度已注册" }
-    : {
-        name: "scheduler",
-        status: config.schedule.enabled ? "error" : "warn",
-        message: config.schedule.enabled ? "配置启用但系统调度未注册" : "定时任务未启用",
-        action: "运行 daily-report schedule on 或 daily-report schedule set \"21:00\"",
-      });
+  const scheduled = isScheduled();
+  if (config.schedule.enabled && scheduled) {
+    checks.push({ name: "scheduler", status: "ok", message: "系统调度已注册" });
+  } else if (config.schedule.enabled) {
+    checks.push({
+      name: "scheduler",
+      status: "error",
+      message: "配置启用但系统调度未注册",
+      action: "运行 daily-report schedule on 或 daily-report schedule set \"21:00\"",
+    });
+  } else if (scheduled) {
+    checks.push({
+      name: "scheduler",
+      status: "error",
+      message: "配置关闭但系统调度仍注册",
+      action: "运行 daily-report schedule off 清理系统调度",
+    });
+  } else {
+    checks.push({
+      name: "scheduler",
+      status: "warn",
+      message: "定时任务未启用",
+      action: "运行 daily-report schedule on 或 daily-report schedule set \"21:00\"",
+    });
+  }
 
   const fileDeps = { existsSync, readdirSync };
   checks.push(hasFiles(logsDir, ".stdout.log", fileDeps)
