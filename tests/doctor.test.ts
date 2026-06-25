@@ -70,6 +70,7 @@ describe("collectDoctorChecks", () => {
         "/repo/ok",
         "/repo/ok/.git",
       ].includes(filePath),
+      readFileSync: () => JSON.stringify(makeConfig()),
       readdirSync: () => [],
       execFileSync: () => "Logged in",
       isScheduled: () => scheduled,
@@ -94,6 +95,7 @@ describe("collectDoctorChecks", () => {
         "/home/me/.daily-report/reports",
         "/home/me/.daily-report/reports/2026-06-24.md",
       ].includes(filePath),
+      readFileSync: () => JSON.stringify(makeConfig()),
       readdirSync: (dir) => {
         if (dir === "/home/me/.daily-report/logs") return ["2026-06-24.log"];
         if (dir === "/home/me/.daily-report/reports") return ["2026-06-24.md"];
@@ -144,6 +146,62 @@ describe("collectDoctorChecks", () => {
       status: "warn",
       message: "配置文件不存在，将使用默认配置",
       action: "运行 daily-report setup",
+    });
+  });
+
+  it("reports an unreadable config file instead of treating existence as healthy", () => {
+    const checks = collectDoctorChecks({
+      configPath: "/home/me/.daily-report/config.json",
+      logsDir: "/home/me/.daily-report/logs",
+      reportsDir: "/home/me/.daily-report/reports",
+      homeDir: "/home/me",
+      env: {},
+      existsSync: (filePath) => filePath === "/home/me/.daily-report/config.json",
+      readFileSync: () => "{bad json",
+      readdirSync: () => [],
+      execFileSync: () => {
+        throw new Error("gh unavailable");
+      },
+      isScheduled: () => false,
+      loadConfig: () => {
+        throw new Error("Unexpected token in JSON");
+      },
+    });
+
+    expect(checks.find((check) => check.name === "config")).toMatchObject({
+      status: "error",
+      message: "配置文件无法读取，已使用默认配置继续诊断",
+      details: "/home/me/.daily-report/config.json",
+      action: "修复或重新生成 ~/.daily-report/config.json",
+    });
+  });
+
+  it("recognizes undated launchd stdout and stderr logs", () => {
+    const checks = collectDoctorChecks({
+      config: makeConfig(),
+      configPath: "/home/me/.daily-report/config.json",
+      logsDir: "/home/me/.daily-report/logs",
+      reportsDir: "/home/me/.daily-report/reports",
+      homeDir: "/home/me",
+      env: { OPENAI_API_KEY: "sk-test" },
+      existsSync: (filePath) => [
+        "/home/me/.daily-report/config.json",
+        "/repo/ok",
+        "/repo/ok/.git",
+        "/home/me/.daily-report/logs",
+      ].includes(filePath),
+      readFileSync: () => JSON.stringify(makeConfig()),
+      readdirSync: (dir) => {
+        if (dir === "/home/me/.daily-report/logs") return ["stderr.log"];
+        return [];
+      },
+      execFileSync: () => "Logged in",
+      isScheduled: () => true,
+    });
+
+    expect(checks.find((check) => check.name === "logs")).toMatchObject({
+      status: "ok",
+      message: "找到最近的定时日志",
     });
   });
 

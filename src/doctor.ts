@@ -10,6 +10,7 @@ import {
   loadConfig as defaultLoadConfig,
   resolveEnvVarsWithEnv,
 } from "./config";
+import { isScheduledLogFileName } from "./logs-command";
 import { isScheduled as defaultIsScheduled } from "./scheduler";
 import { DailyReportConfig } from "./types";
 
@@ -32,6 +33,7 @@ export interface DoctorDeps {
   env?: NodeJS.ProcessEnv;
   existsSync?: (filePath: string) => boolean;
   readdirSync?: (dir: string) => string[];
+  readFileSync?: (filePath: string, encoding: "utf-8") => string;
   execFileSync?: (cmd: string, args: string[]) => string | Buffer;
   isScheduled?: () => boolean;
   loadConfig?: () => DailyReportConfig;
@@ -87,9 +89,7 @@ function hasDatedLogs(
 ): boolean {
   try {
     if (!deps.existsSync(dir)) return false;
-    return deps.readdirSync(dir).some((name) =>
-      /^\d{4}-\d{2}-\d{2}(\.(stdout|stderr))?\.log$/.test(name)
-    );
+    return deps.readdirSync(dir).some(isScheduledLogFileName);
   } catch {
     return false;
   }
@@ -99,8 +99,23 @@ export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
   const configPath = deps.configPath ?? getConfigPath();
   const existsSync = deps.existsSync ?? fs.existsSync;
   const configExists = existsSync(configPath);
+  const readFileSync = deps.readFileSync ?? ((filePath: string, encoding: "utf-8") => fs.readFileSync(filePath, encoding));
   const loadConfig = deps.loadConfig ?? defaultLoadConfig;
-  const config = deps.config ?? (configExists ? loadConfig() : getDefaultConfig());
+  let configLoadError: unknown;
+  let config: DailyReportConfig;
+  if (deps.config) {
+    config = deps.config;
+  } else if (configExists) {
+    try {
+      JSON.parse(readFileSync(configPath, "utf-8"));
+      config = loadConfig();
+    } catch (err) {
+      configLoadError = err;
+      config = getDefaultConfig();
+    }
+  } else {
+    config = getDefaultConfig();
+  }
   const logsDir = deps.logsDir ?? getLogsDir();
   const reportsDir = deps.reportsDir ?? getReportsDir(config);
   const homeDir = deps.homeDir ?? os.homedir();
@@ -112,9 +127,19 @@ export function collectDoctorChecks(deps: DoctorDeps = {}): DoctorCheck[] {
 
   const checks: DoctorCheck[] = [];
 
-  checks.push(configExists
-    ? { name: "config", status: "ok", message: "配置文件可读取", details: configPath }
-    : { name: "config", status: "warn", message: "配置文件不存在，将使用默认配置", action: "运行 daily-report setup" });
+  if (!configExists) {
+    checks.push({ name: "config", status: "warn", message: "配置文件不存在，将使用默认配置", action: "运行 daily-report setup" });
+  } else if (configLoadError) {
+    checks.push({
+      name: "config",
+      status: "error",
+      message: "配置文件无法读取，已使用默认配置继续诊断",
+      details: configPath,
+      action: "修复或重新生成 ~/.daily-report/config.json",
+    });
+  } else {
+    checks.push({ name: "config", status: "ok", message: "配置文件可读取", details: configPath });
+  }
 
   const resolvedApiKey = resolveEnvVarsWithEnv(config.llm.apiKey, env);
   checks.push(resolvedApiKey

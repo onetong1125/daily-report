@@ -29,6 +29,10 @@ running `npm run release`.
   immediately instead of requiring a separate `daily-report schedule on`.
 - Corrected `daily-report doctor` diagnostics for missing config files and
   stale system scheduler registrations.
+- Report invalid `~/.daily-report/config.json` files as doctor errors instead
+  of marking the config check healthy after falling back to defaults.
+- Let `daily-report logs` and `daily-report doctor` discover launchd
+  `stdout.log`/`stderr.log` output when no dated scheduled log exists yet.
 
 ## 0.2.3 - 2026-06-23
 

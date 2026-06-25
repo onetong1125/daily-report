@@ -19,6 +19,12 @@ export interface LogFsDeps {
   readFileSync?: (filePath: string, encoding: "utf-8") => string;
 }
 
+export function isScheduledLogFileName(name: string): boolean {
+  return /^(\d{4}-\d{2}-\d{2})\.log$/.test(name) ||
+    /^(\d{4}-\d{2}-\d{2})\.(stdout|stderr)\.log$/.test(name) ||
+    /^(stdout|stderr)\.log$/.test(name);
+}
+
 function depsWithDefaults(deps: LogFsDeps): Required<LogFsDeps> {
   return {
     existsSync: deps.existsSync ?? fs.existsSync,
@@ -33,14 +39,18 @@ export function discoverDatedLogs(logsDir: string = getLogsDir(), deps: LogFsDep
   if (!fsDeps.existsSync(logsDir)) return [];
 
   const byDate = new Map<string, DatedLogFiles>();
+  let launchdLog: DatedLogFiles | undefined;
   for (const name of fsDeps.readdirSync(logsDir)) {
     const combinedMatch = name.match(/^(\d{4}-\d{2}-\d{2})\.log$/);
     const legacyMatch = name.match(/^(\d{4}-\d{2}-\d{2})\.(stdout|stderr)\.log$/);
-    if (!combinedMatch && !legacyMatch) continue;
+    const undatedLegacyMatch = name.match(/^(stdout|stderr)\.log$/);
+    if (!combinedMatch && !legacyMatch && !undatedLegacyMatch) continue;
 
-    const date = combinedMatch?.[1] ?? legacyMatch?.[1] as string;
-    const stream = legacyMatch?.[2];
-    const current = byDate.get(date) ?? { date };
+    const date = combinedMatch?.[1] ?? legacyMatch?.[1] ?? "launchd";
+    const stream = legacyMatch?.[2] ?? undatedLegacyMatch?.[1];
+    const current = date === "launchd"
+      ? launchdLog ?? { date }
+      : byDate.get(date) ?? { date };
     const filePath = path.join(logsDir, name);
     const size = fsDeps.statSync(filePath).size;
 
@@ -55,10 +65,22 @@ export function discoverDatedLogs(logsDir: string = getLogsDir(), deps: LogFsDep
       current.legacyStderrSize = size;
     }
 
-    byDate.set(date, current);
+    if (date === "launchd") {
+      launchdLog = current;
+    } else {
+      byDate.set(date, current);
+    }
   }
 
-  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+  if (byDate.size === 0 && launchdLog) {
+    byDate.set(launchdLog.date, launchdLog);
+  }
+
+  return [...byDate.values()].sort((a, b) => {
+    if (a.date === "launchd") return 1;
+    if (b.date === "launchd") return -1;
+    return b.date.localeCompare(a.date);
+  });
 }
 
 export function formatLogList(logs: DatedLogFiles[]): string {

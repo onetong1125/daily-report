@@ -53,6 +53,27 @@ describe("discoverDatedLogs", () => {
       },
     ]);
   });
+
+  it("keeps undated launchd stdout and stderr logs discoverable", () => {
+    const logs = discoverDatedLogs("/logs", {
+      existsSync: () => true,
+      readdirSync: () => [
+        "stderr.log",
+        "stdout.log",
+      ],
+      statSync: (filePath) => ({ size: filePath.includes("stderr") ? 12 : 34 }),
+    });
+
+    expect(logs).toEqual([
+      {
+        date: "launchd",
+        legacyStdout: "/logs/stdout.log",
+        legacyStderr: "/logs/stderr.log",
+        legacyStdoutSize: 34,
+        legacyStderrSize: 12,
+      },
+    ]);
+  });
 });
 
 describe("formatLogList", () => {
@@ -76,6 +97,20 @@ describe("formatLatestLogSummary", () => {
     })).toBe([
       "latest scheduled log: 2026-06-24",
       "log: /logs/2026-06-24.log (34 bytes)",
+    ].join("\n"));
+  });
+
+  it("prints undated launchd log paths", () => {
+    expect(formatLatestLogSummary({
+      date: "launchd",
+      legacyStdout: "/logs/stdout.log",
+      legacyStderr: "/logs/stderr.log",
+      legacyStdoutSize: 34,
+      legacyStderrSize: 12,
+    })).toBe([
+      "latest scheduled log: launchd",
+      "legacy stdout: /logs/stdout.log (34 bytes)",
+      "legacy stderr: /logs/stderr.log (12 bytes)",
     ].join("\n"));
   });
 });
