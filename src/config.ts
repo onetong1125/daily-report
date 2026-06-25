@@ -38,7 +38,25 @@ const DEFAULT_CONFIG: DailyReportConfig = {
 
 /** Resolve ${ENV_VAR} placeholders in a string */
 export function resolveEnvVars(value: string): string {
-  return value.replace(/\$\{(\w+)\}/g, (_, name) => process.env[name] || "");
+  return resolveEnvVarsWithEnv(value, process.env);
+}
+
+export function resolveEnvVarsWithEnv(value: string, env: NodeJS.ProcessEnv): string {
+  return value.replace(/\$\{(\w+)\}/g, (_, name) => env[name] || "");
+}
+
+export function getDefaultConfig(): DailyReportConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    repos: [...DEFAULT_CONFIG.repos],
+    llm: { ...DEFAULT_CONFIG.llm },
+    report: { ...DEFAULT_CONFIG.report },
+    privacy: {
+      ...DEFAULT_CONFIG.privacy,
+      allowedFields: [...DEFAULT_CONFIG.privacy.allowedFields],
+    },
+    schedule: { ...DEFAULT_CONFIG.schedule },
+  };
 }
 
 /** Ensure the config directory exists */
@@ -61,8 +79,9 @@ export function loadConfig(): DailyReportConfig {
   ensureConfigDir();
 
   if (!fs.existsSync(CONFIG_PATH)) {
-    saveConfig(DEFAULT_CONFIG);
-    return { ...DEFAULT_CONFIG };
+    const defaultConfig = getDefaultConfig();
+    saveConfig(defaultConfig);
+    return defaultConfig;
   }
 
   try {
@@ -86,7 +105,7 @@ export function loadConfig(): DailyReportConfig {
     return merged;
   } catch (err) {
     console.error(`Failed to load config, using defaults: ${err}`);
-    return { ...DEFAULT_CONFIG };
+    return getDefaultConfig();
   }
 }
 
@@ -105,6 +124,11 @@ export function getResolvedApiKey(config: DailyReportConfig): string {
 /** Get config directory path */
 export function getConfigDir(): string {
   return CONFIG_DIR;
+}
+
+/** Get config file path */
+export function getConfigPath(): string {
+  return CONFIG_PATH;
 }
 
 /** Get reports directory path */

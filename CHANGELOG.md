@@ -8,10 +8,35 @@ running `npm run release`.
 
 ## Unreleased
 
+## 0.2.4 - 2026-06-25
+
+### Added
+
+- Added `daily-report doctor` for config, collector, scheduler, log, and
+  report diagnostics.
+- Added `daily-report logs list/latest/tail` for inspecting scheduled-run logs.
+
+### Changed
+
+- Documented scheduled-log structure, including dated logs and launchd
+  `stdout.log`/`stderr.log` fallback files.
+- Made `daily-report doctor` action lines include their check name so remediation
+  steps are clearly tied to the warning or error item.
+- Wrote scheduled-run output to a single dated log file under
+  `~/.daily-report/logs/`, with stderr lines marked inline.
+- Added run metadata and phase timing lines to scheduled logs and manual
+  `--verbose` output.
+
 ### Fixed
 
 - Applied `daily-report config schedule` changes to the system scheduler
   immediately instead of requiring a separate `daily-report schedule on`.
+- Corrected `daily-report doctor` diagnostics for missing config files and
+  stale system scheduler registrations.
+- Report invalid `~/.daily-report/config.json` files as doctor errors instead
+  of marking the config check healthy after falling back to defaults.
+- Let `daily-report logs` and `daily-report doctor` discover launchd
+  `stdout.log`/`stderr.log` output when no dated scheduled log exists yet.
 
 ## 0.2.3 - 2026-06-23
 

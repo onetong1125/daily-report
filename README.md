@@ -78,6 +78,18 @@ daily-report config privacy          # 修改隐私设置
 daily-report config schedule         # 修改定时设置
 ```
 
+### 诊断与日志
+
+```bash
+daily-report doctor                 # 检查配置、采集源、定时任务和最近日志
+daily-report logs list              # 列出定时任务日志
+daily-report logs latest            # 查看最近一次定时日志路径
+daily-report logs tail              # 打印最近一次定时日志尾部
+daily-report logs tail --lines 80
+```
+
+遇到定时任务、采集源或配置问题时，先运行 `daily-report doctor`。输出会检查配置文件、API Key 是否可解析、仓库路径、GitHub CLI、Claude/Codex 会话目录、系统调度状态、最近日志和最近日报。命令不会打印 API Key 原文。
+
 ### 定时任务
 
 ```bash
@@ -87,6 +99,13 @@ daily-report schedule on                   # 启用定时
 daily-report schedule off                  # 关闭定时
 daily-report schedule status               # 查看状态
 ```
+
+定时任务运行时会按日期写入日志：
+
+- `~/.daily-report/logs/YYYY-MM-DD.log`：采集、生成、保存路径、警告和错误输出
+- `~/.daily-report/logs/stdout.log`、`~/.daily-report/logs/stderr.log`：launchd 启动层输出，仅用于排查任务尚未进入 `run-scheduled` 前的启动失败
+
+正常情况下查看 `YYYY-MM-DD.log`。如果定时任务在进入 `run-scheduled` 前就失败，例如找不到 Node.js 或启动脚本异常，可能只会产生 `stdout.log` / `stderr.log`；当没有按日期生成的日志时，`daily-report logs latest/tail` 会自动回退显示这些 launchd 日志。定时任务日志包含运行头部和阶段耗时；警告和错误行会带 `[stderr]` 标记，方便在同一个文件里按顺序排查。手动运行 `daily-report --verbose` 时也会在终端显示同类诊断信息。
 
 ## 配置文件
 
@@ -173,6 +192,7 @@ daily-report schedule status               # 查看状态
 - **运行时**：Node.js ≥ 18
 - **CLI 框架**：Commander.js + Inquirer.js
 - **定时任务**：macOS launchd / Linux crontab
+- **定时日志**：`~/.daily-report/logs/YYYY-MM-DD.log`
 
 ## 开发
 

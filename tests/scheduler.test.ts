@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { cronToLaunchdCalendarIntervals, getScheduleTimeInputError, parseTimeExpression } from "../src/scheduler";
+import {
+  buildScheduledCommandArgs,
+  cronToLaunchdCalendarIntervals,
+  getScheduleTimeInputError,
+  parseTimeExpression,
+} from "../src/scheduler";
 
 describe("parseTimeExpression", () => {
   // --- Cron pass-through ---
@@ -164,5 +169,14 @@ describe("getScheduleTimeInputError", () => {
 
   it("rejects out-of-range setup time input", () => {
     expect(getScheduleTimeInputError("24:00")).toMatch(/请输入 HH:mm 格式/);
+  });
+});
+
+describe("buildScheduledCommandArgs", () => {
+  it("runs the scheduled wrapper instead of the normal report command", () => {
+    expect(buildScheduledCommandArgs("/opt/homebrew/bin/daily-report")).toEqual([
+      "/opt/homebrew/bin/daily-report",
+      "run-scheduled",
+    ]);
   });
 });

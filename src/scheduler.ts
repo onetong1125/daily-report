@@ -13,6 +13,10 @@ const PLIST_PATH = path.join(
   `${PLIST_LABEL}.plist`
 );
 
+export function getSchedulerPlistPath(): string {
+  return PLIST_PATH;
+}
+
 export interface LaunchdCalendarInterval {
   Minute?: number;
   Hour?: number;
@@ -144,7 +148,11 @@ function resolveDailyReportLauncher(): string {
 }
 
 function resolveScheduledCommand(): string[] {
-  return [resolveDailyReportLauncher()];
+  return buildScheduledCommandArgs(resolveDailyReportLauncher());
+}
+
+export function buildScheduledCommandArgs(dailyReportCommand: string): string[] {
+  return [dailyReportCommand, "run-scheduled"];
 }
 
 function serializeShellCommand(args: string[]): string {
@@ -368,7 +376,7 @@ export function scheduleOn(config: DailyReportConfig): boolean {
 
   if (process.platform === "darwin") {
     try {
-      const args = [...resolveScheduledCommand(), "--quiet"];
+      const args = resolveScheduledCommand();
       const plist = buildLaunchdPlist(cron, args);
       fs.mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
       fs.mkdirSync(path.join(os.homedir(), ".daily-report", "logs"), { recursive: true });
@@ -393,7 +401,7 @@ export function scheduleOn(config: DailyReportConfig): boolean {
 
       // Remove any existing daily-report entries
       const lines = existing.split("\n").filter((l) => !l.includes("daily-report"));
-      const command = serializeShellCommand([...resolveScheduledCommand(), "--quiet"]);
+      const command = serializeShellCommand(resolveScheduledCommand());
       lines.push(`${cron} ${command} # daily-report`);
 
       // Write new crontab
