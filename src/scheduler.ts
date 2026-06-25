@@ -13,6 +13,10 @@ const PLIST_PATH = path.join(
   `${PLIST_LABEL}.plist`
 );
 
+export function getSchedulerPlistPath(): string {
+  return PLIST_PATH;
+}
+
 export interface LaunchdCalendarInterval {
   Minute?: number;
   Hour?: number;

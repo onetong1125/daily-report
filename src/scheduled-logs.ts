@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { format } from "util";
 import { getLogsDir } from "./config";
+import { getVersion, logRunHeader } from "./report-runner";
 import { todayInTimezone } from "./timeboundary";
 import { DailyReportConfig } from "./types";
 
@@ -61,6 +62,13 @@ export async function runWithScheduledLogs(
 
   try {
     writeLine(stdoutFd, `=== daily-report scheduled run started ${now().toISOString()} ===`);
+    logRunHeader({
+      version: getVersion(),
+      timezone: config.report.timezone,
+      reportDate: date,
+      outputDir: config.report.outputDir,
+      repoCount: config.repos.length,
+    });
     await run();
     writeLine(stdoutFd, `=== daily-report scheduled run finished ${now().toISOString()} ===`);
   } catch (err: any) {

@@ -8,10 +8,18 @@ running `npm run release`.
 
 ## Unreleased
 
+### Added
+
+- Added `daily-report doctor` for config, collector, scheduler, log, and
+  report diagnostics.
+- Added `daily-report logs list/latest/tail` for inspecting scheduled-run logs.
+
 ### Changed
 
 - Wrote scheduled-run output to dated stdout/stderr log files under
   `~/.daily-report/logs/`.
+- Added run metadata and phase timing lines to scheduled logs and manual
+  `--verbose` output.
 
 ### Fixed
 

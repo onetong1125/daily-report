@@ -72,6 +72,11 @@ describe("runWithScheduledLogs", () => {
     const stderr = fs.readFileSync(path.join(logsDir, "2026-06-24.stderr.log"), "utf-8");
 
     expect(stdout).toContain("=== daily-report scheduled run started 2026-06-24T10:30:00.000Z ===");
+    expect(stdout).toContain("[run] run_id=");
+    expect(stdout).toContain("version=");
+    expect(stdout).toContain("timezone=Asia/Shanghai");
+    expect(stdout).toContain("report_date=2026-06-24");
+    expect(stdout).toContain("repos=0");
     expect(stdout).toContain("stdout message");
     expect(stdout).toContain("count: 3");
     expect(stdout).toContain("=== daily-report scheduled run finished 2026-06-24T10:30:00.000Z ===");

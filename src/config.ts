@@ -38,7 +38,11 @@ const DEFAULT_CONFIG: DailyReportConfig = {
 
 /** Resolve ${ENV_VAR} placeholders in a string */
 export function resolveEnvVars(value: string): string {
-  return value.replace(/\$\{(\w+)\}/g, (_, name) => process.env[name] || "");
+  return resolveEnvVarsWithEnv(value, process.env);
+}
+
+export function resolveEnvVarsWithEnv(value: string, env: NodeJS.ProcessEnv): string {
+  return value.replace(/\$\{(\w+)\}/g, (_, name) => env[name] || "");
 }
 
 /** Ensure the config directory exists */
@@ -105,6 +109,11 @@ export function getResolvedApiKey(config: DailyReportConfig): string {
 /** Get config directory path */
 export function getConfigDir(): string {
   return CONFIG_DIR;
+}
+
+/** Get config file path */
+export function getConfigPath(): string {
+  return CONFIG_PATH;
 }
 
 /** Get reports directory path */

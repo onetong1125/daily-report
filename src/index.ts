@@ -5,24 +5,13 @@ import { loadConfig, saveConfig } from "./config";
 import { runSetup, selectTrackedRepos } from "./setup";
 import { scheduleOn, scheduleOff, parseTimeExpression, isScheduled, SCHEDULE_EXPRESSION_HELP, getScheduleTimeInputError } from "./scheduler";
 import { applyScheduleConfig } from "./schedule-config";
-import { generateDailyReport } from "./report-runner";
+import { generateDailyReport, getVersion } from "./report-runner";
 import { runWithScheduledLogs } from "./scheduled-logs";
-import * as fs from "fs";
-import * as path from "path";
+import { runDoctor } from "./doctor";
+import { printLatestLogSummary, printLogList, printLogTail } from "./logs-command";
 
 function printScheduleExpressionHelp(): void {
   console.error(SCHEDULE_EXPRESSION_HELP);
-}
-
-function getVersion(): string {
-  // 运行时读取 package.json：dev 模式读到项目实时版本，全局安装读到安装时的副本
-  try {
-    return JSON.parse(
-      fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf-8")
-    ).version;
-  } catch {
-    return "unknown";
-  }
 }
 
 const program = new Command();
@@ -53,7 +42,7 @@ program
   .description("内部命令：按日期写入定时任务日志后生成日报")
   .action(async () => {
     const config = loadConfig();
-    await runWithScheduledLogs(config, () => generateDailyReport({ quiet: true }));
+    await runWithScheduledLogs(config, () => generateDailyReport({ quiet: true, scheduled: true }));
   });
 
 // ============================================================
@@ -161,6 +150,45 @@ configCmd
       return;
     }
     console.log("✅ 定时设置已更新并已同步到系统调度");
+  });
+
+program
+  .command("doctor")
+  .description("检查配置、采集源、定时任务和最近日志")
+  .action(() => {
+    runDoctor();
+  });
+
+const logsCmd = program
+  .command("logs")
+  .description("查看定时任务日志");
+
+logsCmd
+  .command("list")
+  .description("列出按日期保存的定时任务日志")
+  .action(() => {
+    printLogList();
+  });
+
+logsCmd
+  .command("latest")
+  .description("显示最近一次定时任务日志路径")
+  .action(() => {
+    printLatestLogSummary();
+  });
+
+logsCmd
+  .command("tail")
+  .description("打印最近一次定时任务日志尾部")
+  .option("-n, --lines <number>", "打印行数，默认 80")
+  .option("--stream <stream>", "stdout 或 stderr，默认 stdout", "stdout")
+  .action((options) => {
+    if (options.stream !== "stdout" && options.stream !== "stderr") {
+      console.error("❌ --stream 只支持 stdout 或 stderr");
+      process.exitCode = 1;
+      return;
+    }
+    printLogTail(options);
   });
 
 // ============================================================
