@@ -8,6 +8,8 @@ running `npm run release`.
 
 ## Unreleased
 
+## 0.2.4 - 2026-06-25
+
 ### Added
 
 - Added `daily-report doctor` for config, collector, scheduler, log, and
@@ -16,6 +18,8 @@ running `npm run release`.
 
 ### Changed
 
+- Documented scheduled-log structure, including dated logs and launchd
+  `stdout.log`/`stderr.log` fallback files.
 - Made `daily-report doctor` action lines include their check name so remediation
   steps are clearly tied to the warning or error item.
 - Wrote scheduled-run output to a single dated log file under

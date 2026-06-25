@@ -103,8 +103,9 @@ daily-report schedule status               # 查看状态
 定时任务运行时会按日期写入日志：
 
 - `~/.daily-report/logs/YYYY-MM-DD.log`：采集、生成、保存路径、警告和错误输出
+- `~/.daily-report/logs/stdout.log`、`~/.daily-report/logs/stderr.log`：launchd 启动层输出，仅用于排查任务尚未进入 `run-scheduled` 前的启动失败
 
-定时任务日志包含运行头部和阶段耗时；警告和错误行会带 `[stderr]` 标记，方便在同一个文件里按顺序排查。手动运行 `daily-report --verbose` 时也会在终端显示同类诊断信息。
+正常情况下查看 `YYYY-MM-DD.log`。如果定时任务在进入 `run-scheduled` 前就失败，例如找不到 Node.js 或启动脚本异常，可能只会产生 `stdout.log` / `stderr.log`；当没有按日期生成的日志时，`daily-report logs latest/tail` 会自动回退显示这些 launchd 日志。定时任务日志包含运行头部和阶段耗时；警告和错误行会带 `[stderr]` 标记，方便在同一个文件里按顺序排查。手动运行 `daily-report --verbose` 时也会在终端显示同类诊断信息。
 
 ## 配置文件
 
