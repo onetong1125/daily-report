@@ -82,6 +82,10 @@ daily-report config schedule         # 修改定时设置
 
 ```bash
 daily-report doctor                 # 检查配置、采集源、定时任务和最近日志
+daily-report reports list           # 列出已生成的日报
+daily-report reports latest         # 查看最近一份日报路径
+daily-report reports show           # 打印最近一份日报正文
+daily-report reports show 2026-06-01 # 打印指定日期的日报正文
 daily-report logs list              # 列出定时任务日志
 daily-report logs latest            # 查看最近一次定时日志路径
 daily-report logs tail              # 打印最近一次定时日志尾部

@@ -9,6 +9,7 @@ import { generateDailyReport, getVersion } from "./report-runner";
 import { runWithScheduledLogs } from "./scheduled-logs";
 import { runDoctor } from "./doctor";
 import { printLatestLogSummary, printLogList, printLogTail } from "./logs-command";
+import { printLatestReportSummary, printReport, printReportList } from "./reports-command";
 
 function printScheduleExpressionHelp(): void {
   console.error(SCHEDULE_EXPRESSION_HELP);
@@ -183,6 +184,31 @@ logsCmd
   .option("-n, --lines <number>", "打印行数，默认 80")
   .action((options) => {
     printLogTail(options);
+  });
+
+const reportsCmd = program
+  .command("reports")
+  .description("查看已生成的日报");
+
+reportsCmd
+  .command("list")
+  .description("列出已生成的日报")
+  .action(() => {
+    printReportList();
+  });
+
+reportsCmd
+  .command("latest")
+  .description("显示最近一份日报路径")
+  .action(() => {
+    printLatestReportSummary();
+  });
+
+reportsCmd
+  .command("show [date]")
+  .description("打印最近或指定日期的日报正文 (YYYY-MM-DD)")
+  .action((date?: string) => {
+    printReport(date);
   });
 
 // ============================================================
