@@ -8,6 +8,11 @@ running `npm run release`.
 
 ## Unreleased
 
+### Added
+
+- Added `daily-report reports list/latest/show` for inspecting generated daily
+  report Markdown files without manually opening `~/.daily-report/reports`.
+
 ## 0.2.4 - 2026-06-25
 
 ### Added

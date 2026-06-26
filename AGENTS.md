@@ -15,6 +15,7 @@ This is a TypeScript CLI project for generating daily activity reports. Source f
 - `npm run test:watch`: run Vitest in watch mode.
 - `npm run test:coverage`: generate V8 coverage.
 - `npx vitest run tests/formatter.test.ts`: run a single test file.
+- `npm run install`: 安装到全局，测试时不要使用，除非显式要求
 
 ## Scheduler Bugfix Workflow
 
@@ -41,3 +42,16 @@ When a change affects behavior, user-facing docs, release packaging, or versione
 ## Security & Configuration Tips
 
 Never commit API keys or generated private reports. Configuration belongs in `~/.daily-report/config.json`; prefer `${ENV_VAR}` placeholders for secrets. Preserve the privacy boundary: collectors should emit sanitized metadata only, and prompts must not include source code, raw conversation bodies, or secret values.
+
+# Release 版本
+## 如何发布新版
+1. 当用户指定要发布新版，从main拉取release/vX.Y.Z分支
+2. 修改版本号和Release note，并将修改commit
+3. 发起release分支pr
+4. pr合并之后在merge commit上打版本tag
+
+## Git工作流程
+1. 从main拉特性分枝，按照feat/fix..命名
+2. 在特性分枝上修改代码并提交
+3. 如需测试，将特性分枝合并到dev，在dev上测试
+4. 不要在dev上直接修改代码和提交
