@@ -15,7 +15,7 @@ This is a TypeScript CLI project for generating daily activity reports. Source f
 - `npm run test:watch`: run Vitest in watch mode.
 - `npm run test:coverage`: generate V8 coverage.
 - `npx vitest run tests/formatter.test.ts`: run a single test file.
-- `npm run install`: 安装到全局，测试时不要使用，除非显式要求
+- `npm run release`: 安装到全局，测试时不要使用，除非显式要求
 
 ## Scheduler Bugfix Workflow
 
